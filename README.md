@@ -19,13 +19,10 @@ If you need quick help, fluxion is also available on gitter. You can talk with u
 ## Installation
 Read [here](https://github.com/FluxionNetwork/fluxion/wiki/Generate-ssh-keys) before you do the following steps.
 <br>
-**Download the latest revision**
+**Download this revision**
 ```
-git clone git@github.com:FluxionNetwork/fluxion.git
+git clone https://github.com/yoy123/fluxion-4.10.git
 
-# Or if you prefer https 
-
-git clone https://www.github.com/FluxionNetwork/fluxion.git
 ```
 **Switch to tool's directory**
 ```
@@ -33,27 +30,8 @@ cd fluxion
 ```
 **Run fluxion (missing dependencies will be auto-installed)**
 ```
-./fluxion.sh
+sudo ./fluxion.sh
 ```
-
-**Fluxion is also available in arch** 
-```
-cd bin/arch
-makepkg
-```
-
-or using the blackarch repo
-```
-pacman -S fluxion
-```
-
-## :scroll: Changelog
-Fluxion gets weekly updates with new features, improvements, and bugfixes.
-Be sure to check out the [changelog here](https://github.com/FluxionNetwork/fluxion/commits/master).
-
-## :octocat: How to contribute
-All contributions are welcome! Code, documentation, graphics, or even design suggestions are welcome; use GitHub to its fullest. Submit pull requests, contribute tutorials or other wiki content -- whatever you have to offer, it'll be appreciated but please follow the [style guide](https://github.com/FluxionNetwork/fluxion/wiki/Code-style-guide).
-
 ## :book: How it works
 * Scan for a target wireless network.
 * Launch the `Handshake Snooper` attack.
@@ -71,14 +49,7 @@ All contributions are welcome! Code, documentation, graphics, or even design sug
 
 ## :heavy_exclamation_mark: Requirements
 
-A Linux-based operating system. We recommend Kali Linux 2019.4. An external wifi card is recommended.
-
-## Verify commits
-Now, every commit should be signed. You can verify the signator using `git-verify-commit [commit]`.
-
-| Contributor  | GPG key id |
-| ------------- | ------------- |
-| deltaxflux  | 40EAE3B9D0FBCE9C  |
+A Linux-based operating system. We recommend Kali Linux 2019.4. 2 external wifi cards are required.
 
 ## :octocat: Credits
 1. l3op - contributor
@@ -91,6 +62,7 @@ Now, every commit should be signed. You can verify the signator using `git-verif
 8. PappleTec @sites
 9. MPX4132 - Fluxion V3
 10. usama7628674 - contributor
+11. yoy123 - iOS captive portal + multi dongle scanning
 
 ## Disclaimer
 * Authors do not own the logos under the `/attacks/Captive Portal/sites/` directory. Copyright Disclaimer Under Section 107 of the Copyright Act 1976, allowance is made for "fair use" for purposes such as criticism, comment, news reporting, teaching, scholarship, and research.
