@@ -2,11 +2,11 @@
 
 THIS IS A FORK OF FLUXION. I HAVE ADDED SOME VERY COOL FEATURES, ONE OF WHICH MAKES THE ODDS OF SUCCESS VERY VERY HIGH 
 
-#ADDED FEATURE #1
+# ADDED FEATURE #1
 <br>
 the ability to use multiple dongles for scanning SSID's. It then combines the output into one list (really just a neat idea)
 
-#ADDED FEATURE #2
+# ADDED FEATURE #2
 <br>
 This one is a game changer. Added a legitimate iOS captive portal that looks exactly like the user is connecting to their actual SSID instead of some fake html portal. This increases the chances of the owner believing they are logging into their actual wifi access point 3 fold. its #51 in the captive portal options.
 ------------------------------------------------------------------------------------------------------------------------------------
