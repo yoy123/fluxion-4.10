@@ -9,6 +9,7 @@ the ability to use multiple dongles for scanning SSID's. It then combines the ou
 # ADDED FEATURE #2
 <br>
 This one is a game changer. Added a legitimate iOS captive portal that looks exactly like the user is connecting to their actual SSID instead of some fake html portal. This increases the chances of the owner believing they are logging into their actual wifi access point 3 fold. its #51 in the captive portal options.
+<br>
 ------------------------------------------------------------------------------------------------------------------------------------
 
 # Fluxion is the future of MITM WPA attacks
