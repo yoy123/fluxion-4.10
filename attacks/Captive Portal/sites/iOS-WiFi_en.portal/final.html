@@ -1,0 +1,107 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Connected</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Helvetica Neue', Arial, sans-serif;
+            background: linear-gradient(180deg, #e8e8ed 0%, #d2d2d7 100%);
+            min-height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: flex-start;
+            padding-top: 60px;
+        }
+
+        .modal-overlay {
+            width: 100%;
+            max-width: 400px;
+            padding: 0 20px;
+        }
+
+        .modal {
+            background: rgba(255, 255, 255, 0.95);
+            border-radius: 14px;
+            overflow: hidden;
+            box-shadow: 0 25px 50px rgba(0, 0, 0, 0.15);
+        }
+
+        .modal-body {
+            padding: 32px 24px;
+            text-align: center;
+        }
+
+        .success-icon {
+            width: 60px;
+            height: 60px;
+            margin: 0 auto 20px;
+            background: #34c759;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .success-icon svg {
+            width: 30px;
+            height: 30px;
+            stroke: white;
+            stroke-width: 3;
+            fill: none;
+        }
+
+        .title {
+            font-size: 20px;
+            font-weight: 600;
+            color: #000;
+            margin-bottom: 8px;
+        }
+
+        .subtitle {
+            font-size: 14px;
+            color: #6e6e73;
+            line-height: 1.5;
+        }
+
+        .wifi-connected {
+            margin-top: 24px;
+        }
+
+        .wifi-connected svg {
+            width: 50px;
+            height: 40px;
+        }
+    </style>
+</head>
+<body>
+    <div class="modal-overlay">
+        <div class="modal">
+            <div class="modal-body">
+                <div class="success-icon">
+                    <svg viewBox="0 0 24 24">
+                        <path d="M4 12L9 17L20 6" stroke-linecap="round" stroke-linejoin="round"/>
+                    </svg>
+                </div>
+                <h1 class="title">Connected</h1>
+                <p class="subtitle">You are now connected to "$APTargetSSID"</p>
+                <div class="wifi-connected">
+                    <svg viewBox="0 0 80 60" fill="none">
+                        <path d="M40 52C43.3137 52 46 49.3137 46 46C46 42.6863 43.3137 40 40 40C36.6863 40 34 42.6863 34 46C34 49.3137 36.6863 52 40 52Z" fill="#34c759"/>
+                        <path d="M26 36C30.5 31.5 35 29 40 29C45 29 49.5 31.5 54 36" stroke="#34c759" stroke-width="5" stroke-linecap="round"/>
+                        <path d="M16 26C23 19 31 15 40 15C49 15 57 19 64 26" stroke="#34c759" stroke-width="5" stroke-linecap="round"/>
+                        <path d="M6 16C16 6 27 1 40 1C53 1 64 6 74 16" stroke="#34c759" stroke-width="5" stroke-linecap="round"/>
+                    </svg>
+                </div>
+            </div>
+        </div>
+    </div>
+</body>
+</html>
