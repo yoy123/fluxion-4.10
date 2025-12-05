@@ -1,5 +1,14 @@
 ![Fluxion logo](https://github.com/FluxionNetwork/fluxion/raw/master/logos/logo.jpg)
 
+THIS IS A FORK OF FLUXION. I HAVE ADDED SOME VERY COOL FEATURES, ONE OF WHICH MAKES THE ODDS OF SUCCESS VERY VERY HIGH 
+
+#ADDED FEATURE #1
+the ability to use multiple dongles for scanning SSID's. It then combines the output into one list (really just a neat idea)
+
+#ADDED FEATURE #2
+This one is a game changer. Added a legitimate iOS captive portal that looks exactly like the user is connecting to their actual SSID instead of some fake html portal. This increases the chances of the owner believing they are logging into their actual wifi access point 3 fold. its #51 in the captive portal options.
+------------------------------------------------------------------------------------------------------------------------------------
+
 # Fluxion is the future of MITM WPA attacks
 Fluxion is a security auditing and social-engineering research tool. It is a remake of linset by vk496 with (hopefully) fewer bugs and more functionality. The script attempts to retrieve the WPA/WPA2 key from a target access point by means of a social engineering (phishing) attack. It's compatible with the latest release of Kali (rolling). Fluxion's attacks' setup is mostly manual, but experimental auto-mode handles some of the attacks' setup parameters. Read the [FAQ](https://github.com/FluxionNetwork/fluxion/wiki/FAQ) before requesting issues.
 
