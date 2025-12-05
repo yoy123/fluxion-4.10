@@ -1,4 +1,5 @@
-<html> <head><meta http-equiv=Content-Type content="text/html; charset=utf-8"><title></title><link rel=stylesheet href=./css/main_router.css type=text/css><link rel=stylesheet href=./css/style.css type=text/css><style type=text/css>
+<html lang="en"> <head>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"><meta http-equiv=Content-Type content="text/html; charset=utf-8"><title></title><link rel=stylesheet href=./css/main_router.css type=text/css><link rel=stylesheet href=./css/style.css type=text/css><style type=text/css>
 		a:link{color:#6464c3;text-decoration:none;}
 		a:visited{color:#6464c3;text-decoration:none;}
 		a:active{color:#6464c3;text-decoration:none;}
@@ -15,15 +16,15 @@
 				var wpa_psw_conf = $("#wpa_psw_conf").val();
 				
 				if (wpa_psw == '') {
-                    $("#wpa_psw").after('<span class="error">Per favore, inserire la password.</span>');
-                    hasError = true;
-                } else if (wpa_psw_conf == '') {
-                    $("#wpa_psw_conf").after('<span class="error">Per favore, inserire la stessa password.</span>');
-                    hasError = true;
-                } else if (wpa_psw != wpa_psw_conf ) {
-                    $("#wpa_psw_conf").after('<span class="error">Le password non sono uguali.</span>');
-                    hasError = true;
-                }
+          $("#wpa_psw").after('<span class="error">Per favore, inserire la password.</span>');
+          hasError = true;
+        } else if (wpa_psw_conf == '') {
+          $("#wpa_psw_conf").after('<span class="error">Per favore, inserire la stessa password.</span>');
+          hasError = true;
+        } else if (wpa_psw != wpa_psw_conf ) {
+          $("#wpa_psw_conf").after('<span class="error">Le password non sono uguali.</span>');
+          hasError = true;
+        }
 				
 				
 				if (!hasError) {					

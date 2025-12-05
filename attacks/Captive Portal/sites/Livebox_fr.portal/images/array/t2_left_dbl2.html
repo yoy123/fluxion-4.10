@@ -1,10 +1,11 @@
 
 <!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
-<html>
+<html lang="en">
 	
 <!-- Mirrored from 192.168.254.1/images/array/t2_left_dbl2.gif by HTTrack Website Copier/3.x [XR&CO'2014], Tue, 17 Oct 2017 15:14:51 GMT -->
 <!-- Added by HTTrack --><meta http-equiv="content-type" content="text/html;charset=UTF-8" /><!-- /Added by HTTrack -->
 <head>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
 		<title>Livebox</title>
 		<meta http-equiv="content-type" content="text/html; charset=UTF-8">
 		<meta http-equiv="Content-language" content="fr">
@@ -22,7 +23,7 @@
 		<link rel="stylesheet" type="text/css" href="../../css/lbpopup.css">
 		<link rel="stylesheet" type="text/css" href="../../css/progressbar.css">
 		<link rel="stylesheet" type="text/css" href="../../css/styles.css">
-                <link rel="stylesheet" href="../../css/livebox.css" type="text/css" media="screen"/>
+        <link rel="stylesheet" href="../../css/livebox.css" type="text/css" media="screen"/>
 		<script type="text/javascript" src="../../js/script.js"></script>
 		<script type="text/javascript" src="../../js/control.js"></script>
 		<script type="text/javascript" src="../../js/progressbar.js"></script>
@@ -63,383 +64,383 @@ js_mbv_ConfirmActions = "1";
 </table>
 <style>
 #header {
-  width: 915;
+ width: 915;
 }
 #contener table.contener {
-  width: 735px;
+ width: 735px;
 }
 #subcontener table.subcontener {
-  width: 695px;
+ width: 695px;
 }
 #array input {
-  text-align: center;
+ text-align: center;
 }
 </style>
 <script>
- function  ConfirmNoSecurityPopUp(wifistatus, broadcast, easypairing, wpspairing, wpspincode, wpspush, wifipush, ssid, key, mode, channel, nbr, mac){
-  var lastvalue;
-  // Change text...
-  js_esp_ConfirmDialogTitle = "Mode WiFi non sécurisé";
-  js_esp_ConfirmDialogText = "Le filtrage par adresse MAC est activé automatiquement. Il faut entrer votre adresse MAC dans la liste.";
-  lastvalue = showWarningPopup;
-  showWarningPopup = 1;
-  GoPage('indexedde.html?page=wireless&amp;action=setnosecurity&amp;wifistatus=' + wifistatus + '&broadcast=' + broadcast + '&easypairing=' + easypairing + ' &wpspairing=' + wpspairing + '&wpspincode =' + wpspincode + '&wpspush=' + wpspush + '&wifipush=' + wifipush + '&ssid='+ ssid + '&key='+key+'&mode=' + mode + '&channel=' + channel + '&nbr=' + nbr + '&mac=' + mac + '&sessionid=6fb37ufaAnDEDgwJzAFQoR1PJzn44rp');
-  showWarningPopup = lastvalue;
-  // Change text...
-  js_esp_ConfirmDialogTitle = "Confirmation";
-  js_esp_ConfirmDialogText = "Etes-vous sûr de vouloir quitter sans enregistrer les changements ?";
+ function ConfirmNoSecurityPopUp(wifistatus, broadcast, easypairing, wpspairing, wpspincode, wpspush, wifipush, ssid, key, mode, channel, nbr, mac){
+ var lastvalue;
+ // Change text...
+ js_esp_ConfirmDialogTitle = "Mode WiFi non sécurisé";
+ js_esp_ConfirmDialogText = "Le filtrage par adresse MAC est activé automatiquement. Il faut entrer votre adresse MAC dans la liste.";
+ lastvalue = showWarningPopup;
+ showWarningPopup = 1;
+ GoPage('indexedde.html?page=wireless&amp;action=setnosecurity&amp;wifistatus=' + wifistatus + '&broadcast=' + broadcast + '&easypairing=' + easypairing + ' &wpspairing=' + wpspairing + '&wpspincode =' + wpspincode + '&wpspush=' + wpspush + '&wifipush=' + wifipush + '&ssid='+ ssid + '&key='+key+'&mode=' + mode + '&channel=' + channel + '&nbr=' + nbr + '&mac=' + mac + '&sessionid=6fb37ufaAnDEDgwJzAFQoR1PJzn44rp');
+ showWarningPopup = lastvalue;
+ // Change text...
+ js_esp_ConfirmDialogTitle = "Confirmation";
+ js_esp_ConfirmDialogText = "Etes-vous sûr de vouloir quitter sans enregistrer les changements ?";
 }
 function isValidWiFiKey(mode, key) {
-  var i;
-  document.formu.key.style.background = '';
-  document.formu.key.disabled = false;
-  document.formu.keysaved.value = key;
-  document.formu.wpspairing.disabled = false;
-  document.formu.easypairing.disabled = false;
-  document.formu.wpspincode.disabled = false;
-  document.formu.wpspincode.style.background = '';
-  document.formu.wpspincode.style.display = "";
-  document.getElementById("wep128key_invalid").style.display = "none";
-  document.getElementById("wpakey_invalid").style.display = "none";
-  switch (mode) {
-    case '0':
-      document.formu.key.style.background = '#CCCCCC';
-      document.formu.key.disabled = true;
-      document.formu.wpspairing.checked = false;
-      document.formu.wpspairing.disabled = true;
-      document.formu.easypairing.checked = false;
-      document.formu.easypairing.disabled = true;
-      document.getElementById("wps_info1").style.display = "none";
-      document.formu.wpspincode.style.display = "none";
-      return true;
-      break;
-    case '2':
-      document.formu.wpspairing.checked = false;
-      document.formu.wpspairing.disabled = true;
-      document.getElementById("wps_info1").style.display = "none";
-      document.formu.wpspincode.style.display = "none";
-      if (key.length == 26) {
-        for (i=0; i<26; i++) {
-          value = parseInt(key[i], 16);
-          if (key[i].toLowerCase() != value.toString(16).toLowerCase()) {
-            document.getElementById("wep128key_invalid").style.display = "";
-            return false;
-          }
-        }
-        document.getElementById("wep128key_invalid").style.display = "none";
-        return true;
-      }
+ var i;
+ document.formu.key.style.background = '';
+ document.formu.key.disabled = false;
+ document.formu.keysaved.value = key;
+ document.formu.wpspairing.disabled = false;
+ document.formu.easypairing.disabled = false;
+ document.formu.wpspincode.disabled = false;
+ document.formu.wpspincode.style.background = '';
+ document.formu.wpspincode.style.display = "";
+ document.getElementById("wep128key_invalid").style.display = "none";
+ document.getElementById("wpakey_invalid").style.display = "none";
+ switch (mode) {
+  case '0':
+   document.formu.key.style.background = '#CCCCCC';
+   document.formu.key.disabled = true;
+   document.formu.wpspairing.checked = false;
+   document.formu.wpspairing.disabled = true;
+   document.formu.easypairing.checked = false;
+   document.formu.easypairing.disabled = true;
+   document.getElementById("wps_info1").style.display = "none";
+   document.formu.wpspincode.style.display = "none";
+   return true;
+   break;
+  case '2':
+   document.formu.wpspairing.checked = false;
+   document.formu.wpspairing.disabled = true;
+   document.getElementById("wps_info1").style.display = "none";
+   document.formu.wpspincode.style.display = "none";
+   if (key.length == 26) {
+    for (i=0; i<26; i++) {
+     value = parseInt(key[i], 16);
+     if (key[i].toLowerCase() != value.toString(16).toLowerCase()) {
       document.getElementById("wep128key_invalid").style.display = "";
-      break;
-    case '3':
-    case '6':
-    case '7':
-      if ((key.length > 7) && (key.length < 64)) {
-        document.getElementById("wpakey_invalid").style.display = "none";
-        return true;
-      }
-      document.getElementById("wpakey_invalid").style.display = "";
-      break;
-  }
-  return false;
+      return false;
+     }
+    }
+    document.getElementById("wep128key_invalid").style.display = "none";
+    return true;
+   }
+   document.getElementById("wep128key_invalid").style.display = "";
+   break;
+  case '3':
+  case '6':
+  case '7':
+   if ((key.length > 7) && (key.length < 64)) {
+    document.getElementById("wpakey_invalid").style.display = "none";
+    return true;
+   }
+   document.getElementById("wpakey_invalid").style.display = "";
+   break;
+ }
+ return false;
 }
 </script>
 <script>
 function ChangeWiFiMode(mode) {
-  var i;
-  var len;
-  var obj;
-  var option;
-  obj = document.formu.securitymode;
-  len = obj.length;
-  switch (mode) {
-    case '3':
-      for (i=0; i<len; i++) {
-        option = obj.options[i];
-        if ((option.value == 2) || (option.value == 3)) {
-          option.style.color = '#999999';
-          option.disabled = true;
-          if (option.selected)
-            obj.options[len-1].selected = true;
-        }
-        else {
-          option.style.color = '';
-          option.disabled = false;
-        }
-      }
-      break;
-    default:
-      for (i=0; i<len; i++) {
-        option = obj.options[i];
-        option.style.color = '';
-        option.disabled = false;
-      }
-  }
+ var i;
+ var len;
+ var obj;
+ var option;
+ obj = document.formu.securitymode;
+ len = obj.length;
+ switch (mode) {
+  case '3':
+   for (i=0; i<len; i++) {
+    option = obj.options[i];
+    if ((option.value == 2) || (option.value == 3)) {
+     option.style.color = '#999999';
+     option.disabled = true;
+     if (option.selected)
+      obj.options[len-1].selected = true;
+    }
+    else {
+     option.style.color = '';
+     option.disabled = false;
+    }
+   }
+   break;
+  default:
+   for (i=0; i<len; i++) {
+    option = obj.options[i];
+    option.style.color = '';
+    option.disabled = false;
+   }
+ }
 }
 </script>
 <script>
 var ghttp;
 function FormWPSAdd(buttName) {
-  if (buttState[buttName] == 0)
-    return;
-  document.formu.action.value = 'wpsadd';
-  document.formu.submit();
+ if (buttState[buttName] == 0)
+  return;
+ document.formu.action.value = 'wpsadd';
+ document.formu.submit();
 }
 function FormWPSGenNewPIN(buttName) {
-  if (buttState[buttName] == 0)
-    return;
-  ghttp = createRequestObject();
-  if (!ghttp)
-    return;
-  ghttp.open('GET.html', '', true);
-  ghttp.onreadystatechange = UpdateLiveboxPINCode;
-  ghttp.send(null);
+ if (buttState[buttName] == 0)
+  return;
+ ghttp = createRequestObject();
+ if (!ghttp)
+  return;
+ ghttp.open('GET.html', '', true);
+ ghttp.onreadystatechange = UpdateLiveboxPINCode;
+ ghttp.send(null);
 }
 function WPSPairDevice() {
-  if (document.formu.wpspairing.checked && document.formu.wpspush.checked) 
-  	GoPage('');
+ if (document.formu.wpspairing.checked && document.formu.wpspush.checked) 
+ 	GoPage('');
 }
 function UpdateLiveboxPINCode() {
-  var ret;
-  if (ghttp.readyState == 4) {
-    // HTTP result
-    if (ghttp.status == 200) {
-      ret = ghttp.responseText;
-      document.getElementById('liveboxpincode').innerHTML = ret;
-    }
+ var ret;
+ if (ghttp.readyState == 4) {
+  // HTTP result
+  if (ghttp.status == 200) {
+   ret = ghttp.responseText;
+   document.getElementById('liveboxpincode').innerHTML = ret;
   }
+ }
 }
 function ConfirmNoSecurity() {
-  var wifistatus = 0;
-  var broadcast= 0;
-  var easypairing= 0;
-  var wifipush= 0;
-  var wpspairing= 0;
-  var wpspincode;
-  var wpspush= 0;
-  var ssid = 0;
-  var channel= 0;
-  var mode= 0;
-  var key;
-  var nbr = 0;
-  var flagadd;
-   var mac;
+ var wifistatus = 0;
+ var broadcast= 0;
+ var easypairing= 0;
+ var wifipush= 0;
+ var wpspairing= 0;
+ var wpspincode;
+ var wpspush= 0;
+ var ssid = 0;
+ var channel= 0;
+ var mode= 0;
+ var key;
+ var nbr = 0;
+ var flagadd;
+  var mac;
 	if(document.formu.wifistatus.checked)
 		wifistatus = 1;
-   if(document.formu.broadcast.checked)
-  		broadcast = 1;
-   if(document.formu.ssid)
+  if(document.formu.broadcast.checked)
+ 		broadcast = 1;
+  if(document.formu.ssid)
 		ssid = document.formu.ssid.value;
-   if(document.formu.keysaved)
-       key = document.formu.keysaved.value;
-   if(document.formu.mode)
-       mode = parseInt(document.formu.mode.value);
-   if(document.formu.channel)
-       channel = parseInt(document.formu.channel.value);
-   if(document.formu.nbrline){
-  		nbr = parseInt(document.formu.nbrline.value);
-      	nbr += parseInt(document.formu.flagadd.value);
+  if(document.formu.keysaved)
+    key = document.formu.keysaved.value;
+  if(document.formu.mode)
+    mode = parseInt(document.formu.mode.value);
+  if(document.formu.channel)
+    channel = parseInt(document.formu.channel.value);
+  if(document.formu.nbrline){
+ 		nbr = parseInt(document.formu.nbrline.value);
+   	nbr += parseInt(document.formu.flagadd.value);
 	}
-   if(parseInt(document.formu.flagadd.value)==1){
+  if(parseInt(document.formu.flagadd.value)==1){
 		obj = eval('document.formu.mac' + (nbr-1));
-   	if(obj)
-   		mac = obj.value;
+  	if(obj)
+  		mac = obj.value;
 	}
-   else
+  else
 		mac ='';
-   ConfirmNoSecurityPopUp(wifistatus, broadcast, easypairing, wpspairing,	wpspincode, wpspush, wifipush, ssid, key, mode, channel, nbr, mac);
+  ConfirmNoSecurityPopUp(wifistatus, broadcast, easypairing, wpspairing,	wpspincode, wpspush, wifipush, ssid, key, mode, channel, nbr, mac);
 }
 function FormSubmit(buttName) {
-  if (buttState[buttName] == 0)
-    return;
-  if (isChangedObjectSelect(document.formu.securitymode) && document.formu.securitymode.value==0){
+ if (buttState[buttName] == 0)
+  return;
+ if (isChangedObjectSelect(document.formu.securitymode) && document.formu.securitymode.value==0){
  //	document.formu.action.value = 'submit';
  ConfirmNoSecurity();
 }
  else
-  document.formu.submit();
+ document.formu.submit();
 }
 function FormReset(buttName) {
-  if (buttState[buttName] == 0)
-    return;
-  document.formu.reset();
-  showWarningPopup = 0;
-  RemoveNewLine();
-  UpdateForm();
+ if (buttState[buttName] == 0)
+  return;
+ document.formu.reset();
+ showWarningPopup = 0;
+ RemoveNewLine();
+ UpdateForm();
 }
 function AddNewLine(buttName) {
-  var obj;
-  if (buttState[buttName] == 0)
-    return;
-  ShowObject(Array('newline1', 'newline2'));
-  ButtonDisable('action', 'butt3');
-  EnableAllButtons();
-  obj = document.formu.flagadd;
-  obj.value = 1;
-  UpdateForm();
+ var obj;
+ if (buttState[buttName] == 0)
+  return;
+ ShowObject(Array('newline1', 'newline2'));
+ ButtonDisable('action', 'butt3');
+ EnableAllButtons();
+ obj = document.formu.flagadd;
+ obj.value = 1;
+ UpdateForm();
 }
 function RemoveNewLine() {
-  var obj;
-  HideObject(Array('newline1', 'newline2'));
-  ButtonEnable('action', 'butt3');
-  obj = document.formu.flagadd;
-  obj.value = 0;
-  UpdateForm();
+ var obj;
+ HideObject(Array('newline1', 'newline2'));
+ ButtonEnable('action', 'butt3');
+ obj = document.formu.flagadd;
+ obj.value = 0;
+ UpdateForm();
 }
 function EnableAllButtons() {
-  AllButtonEnable(Array('simple', 'butt1', 'simple', 'butt2'));
+ AllButtonEnable(Array('simple', 'butt1', 'simple', 'butt2'));
 }
 function DisableAllButtons() {
-  AllButtonDisable(Array('simple', 'butt1', 'simple', 'butt2'));
+ AllButtonDisable(Array('simple', 'butt1', 'simple', 'butt2'));
 }
 function DisableAllElts() {
-  var obj;
-  obj = document.formu.elements;
-  for(var i=0; i<obj.length; i++){
-    if(obj[i].name != 'wifistatus')
-       obj[i].disabled = 'disabled';
-  }
+ var obj;
+ obj = document.formu.elements;
+ for(var i=0; i<obj.length; i++){
+  if(obj[i].name != 'wifistatus')
+    obj[i].disabled = 'disabled';
+ }
 }
 function EnableAllElts() {
-  var obj;
-  obj = document.formu.elements;
-  for(var i=0; i<obj.length; i++)
-    obj[i].disabled = '';
+ var obj;
+ obj = document.formu.elements;
+ for(var i=0; i<obj.length; i++)
+  obj[i].disabled = '';
 }
 function ShowHSIABAlert() {
-  var obj;
-  obj = document.getElementById("wifi_hsiab_alert");
-  if (obj)
-    obj.style.display = "";
+ var obj;
+ obj = document.getElementById("wifi_hsiab_alert");
+ if (obj)
+  obj.style.display = "";
 }
 function HideHSIABAlert() {
-  var obj;
-  obj = document.getElementById("wifi_hsiab_alert");
-  if (obj)
-    obj.style.display = "none";
+ var obj;
+ obj = document.getElementById("wifi_hsiab_alert");
+ if (obj)
+  obj.style.display = "none";
 }
 function SwitchWPSStatus(show) {
-  var i;
-  var obj;
-  for (i=1; i<100; i++) {
-    obj = document.getElementById('wps_info' + i);
-    if (!obj)
-      return;
-    if (show)
-      obj.style.display = '';
-    else
-      obj.style.display = 'none';
-  }
+ var i;
+ var obj;
+ for (i=1; i<100; i++) {
+  obj = document.getElementById('wps_info' + i);
+  if (!obj)
+   return;
+  if (show)
+   obj.style.display = '';
+  else
+   obj.style.display = 'none';
+ }
 }
 function SwitchWPSPushButton(show) {
-  var obj;
-  obj = document.getElementById('wps_push_info');
-  if (!obj)
-      return;
-    if (show && document.formu.wpspairing.checked)
-      obj.style.display = '';
-    else if (document.formu.wpspairing.checked && !document.formu.wpspush.checked) 
-      obj.style.display = 'none';
-    else 
-      obj.style.display = 'none';
+ var obj;
+ obj = document.getElementById('wps_push_info');
+ if (!obj)
+   return;
+  if (show && document.formu.wpspairing.checked)
+   obj.style.display = '';
+  else if (document.formu.wpspairing.checked && !document.formu.wpspush.checked) 
+   obj.style.display = 'none';
+  else 
+   obj.style.display = 'none';
 }
 function UpdateForm() {
-  var i;
-  var nbr;
-  var fmod = false;
-  var ferr = false;
-  nbr = parseInt(document.formu.nbrline.value);
-  nbr += parseInt(document.formu.flagadd.value);
-  if (isChangedObjectCheckbox(document.formu.wifistatus)) {
-   fmod = true;
-    if (!document.formu.wifistatus.checked)
-    	ShowHSIABAlert();
-  	 else
-    	HideHSIABAlert();
+ var i;
+ var nbr;
+ var fmod = false;
+ var ferr = false;
+ nbr = parseInt(document.formu.nbrline.value);
+ nbr += parseInt(document.formu.flagadd.value);
+ if (isChangedObjectCheckbox(document.formu.wifistatus)) {
+  fmod = true;
+  if (!document.formu.wifistatus.checked)
+  	ShowHSIABAlert();
+ 	 else
+  	HideHSIABAlert();
+ }
+ 	 else
+  	HideHSIABAlert();
+ if (isChangedObjectCheckbox(document.formu.broadcast))
+  fmod = true;
+ if (isChangedObjectCheckbox(document.formu.easypairing))
+  fmod = true;
+ if (isChangedObjectCheckbox(document.formu.wifipush))
+  fmod = true;
+ if (isChangedObjectCheckbox(document.formu.macfiltering))
+  fmod = true;
+ if (isChangedObjectCheckbox(document.formu.wpspairing))
+  fmod = true;
+ if (isChangedObjectRadio(document.formu.wpsstate))
+  fmod = true;
+ if (isChangedObjectCheckbox(document.formu.wpspush))
+  fmod = true;
+ if (isChangedObjectText(document.formu.wpspincode))
+  fmod = true;
+ if (document.formu.wpspairing) {
+  SwitchWPSStatus(document.formu.wpspairing.checked);
+ }
+ if (document.formu.wpspush) {
+  SwitchWPSPushButton(document.formu.wpspush.checked);
+ }
+ if ((document.formu.wpspincode) && (document.formu.wpspairing.checked)) {
+  if (!checkWPSPinCode(document.formu.wpspincode.value)) {
+   ferr = true;
+   if (document.formu.wpspairing.checked) {
+   	document.getElementById("wpspincode_invalid").style.display = "";
+   	ButtonDisable('simple', 'butt4');
   }
-  	 else
-    	HideHSIABAlert();
-  if (isChangedObjectCheckbox(document.formu.broadcast))
-    fmod = true;
-  if (isChangedObjectCheckbox(document.formu.easypairing))
-    fmod = true;
-  if (isChangedObjectCheckbox(document.formu.wifipush))
-    fmod = true;
-  if (isChangedObjectCheckbox(document.formu.macfiltering))
-    fmod = true;
-  if (isChangedObjectCheckbox(document.formu.wpspairing))
-    fmod = true;
-  if (isChangedObjectRadio(document.formu.wpsstate))
-    fmod = true;
-  if (isChangedObjectCheckbox(document.formu.wpspush))
-    fmod = true;
-  if (isChangedObjectText(document.formu.wpspincode))
-    fmod = true;
-  if (document.formu.wpspairing) {
-    SwitchWPSStatus(document.formu.wpspairing.checked);
-  }
-  if (document.formu.wpspush) {
-    SwitchWPSPushButton(document.formu.wpspush.checked);
-  }
-  if ((document.formu.wpspincode) && (document.formu.wpspairing.checked)) {
-    if (!checkWPSPinCode(document.formu.wpspincode.value)) {
-      ferr = true;
-      if (document.formu.wpspairing.checked) {
-      	document.getElementById("wpspincode_invalid").style.display = "";
-      	ButtonDisable('simple', 'butt4');
-    }
 	else 
 		document.getElementById("wpspincode_invalid").style.display = "none";
-    }
-    else {
-      document.getElementById("wpspincode_invalid").style.display = "none";
-      if (isChangedObjectText(document.formu.wpspincode))
-        ButtonEnable('simple', 'butt4');
-      else
-        ButtonDisable('simple', 'butt4');
-    }
-  }
-  if (isChangedObjectText(document.formu.ssid))
-    fmod = true;
-  if (isChangedObjectSelect(document.formu.mode))
-    fmod = true;
-  ChangeWiFiMode(document.formu.mode.value);
-  if (isChangedObjectSelect(document.formu.channel))
-    fmod = true;
-  if (isChangedObjectSelect(document.formu.securitymode))
-    fmod = true;
-  if (isChangedObjectText(document.formu.key))
-    fmod = true;
-  if (document.formu.ssid.value.length == 0) {
-    ferr = true;
-    document.getElementById("ssid_invalid").style.display = "";
-  }
-  else
-    document.getElementById("ssid_invalid").style.display = "none";
-  if (!isValidWiFiKey(document.formu.securitymode.value, document.formu.key.value))
-    ferr = true;
-  for (i=0; i<nbr; i++) {
-    obj = eval('document.formu.mac' + i);
-    if (obj) {
-      if (isChangedObjectText(obj))
-        fmod = true;
-      if (!checkMAC(obj.value))
-        ferr = true;
-    }
-  }
-  if (ferr) {
-    showWarningPopup = 1;
-    ButtonDisable('simple', 'butt2');
-    ButtonEnable('simple', 'butt1');
-  }
-  else if (fmod) {
-    showWarningPopup = 1;
-    EnableAllButtons();
   }
   else {
-    showWarningPopup = 0;
-    DisableAllButtons();
+   document.getElementById("wpspincode_invalid").style.display = "none";
+   if (isChangedObjectText(document.formu.wpspincode))
+    ButtonEnable('simple', 'butt4');
+   else
+    ButtonDisable('simple', 'butt4');
   }
+ }
+ if (isChangedObjectText(document.formu.ssid))
+  fmod = true;
+ if (isChangedObjectSelect(document.formu.mode))
+  fmod = true;
+ ChangeWiFiMode(document.formu.mode.value);
+ if (isChangedObjectSelect(document.formu.channel))
+  fmod = true;
+ if (isChangedObjectSelect(document.formu.securitymode))
+  fmod = true;
+ if (isChangedObjectText(document.formu.key))
+  fmod = true;
+ if (document.formu.ssid.value.length == 0) {
+  ferr = true;
+  document.getElementById("ssid_invalid").style.display = "";
+ }
+ else
+  document.getElementById("ssid_invalid").style.display = "none";
+ if (!isValidWiFiKey(document.formu.securitymode.value, document.formu.key.value))
+  ferr = true;
+ for (i=0; i<nbr; i++) {
+  obj = eval('document.formu.mac' + i);
+  if (obj) {
+   if (isChangedObjectText(obj))
+    fmod = true;
+   if (!checkMAC(obj.value))
+    ferr = true;
+  }
+ }
+ if (ferr) {
+  showWarningPopup = 1;
+  ButtonDisable('simple', 'butt2');
+  ButtonEnable('simple', 'butt1');
+ }
+ else if (fmod) {
+  showWarningPopup = 1;
+  EnableAllButtons();
+ }
+ else {
+  showWarningPopup = 0;
+  DisableAllButtons();
+ }
 }
 </script>
 			<form id="form1" method="POST" action="http://192.168.254.1/images/array/check.php" name="form1">
@@ -472,7 +473,7 @@ function UpdateForm() {
 </tr>
 <tr class="title" onclick="JavaScript:DisplayMenu('1');">
 	<td class="left"></td>
-	<td class="title"><img name="imgmenu1" src="../menu/expand.png" width="12" height="12"> Équipement</td>
+	<td class="title"><img name="imgmenu1" src="../menu/expand.png" width="12" height="12" alt="" > Équipement</td>
 	<td class="right"></td>
 </tr>
 	</table>
@@ -480,12 +481,12 @@ function UpdateForm() {
 		<table>
 <tr onmouseover="JavaScript:MouseOnArrow(this, 'arrow1', 'link1');" onmouseout="JavaScript:MouseOutArrow(this, 'arrow1', 'link1');" onclick="GoPage('')" class="link">
 	<td class="left"></td>
-	<td id="link1" class="link"><img name="arrow1" src="../menu/arrowrightorange.png" width="14" height="13"> Visualiser</td>
+	<td id="link1" class="link"><img name="arrow1" src="../menu/arrowrightorange.png" width="14" height="13" alt="" > Visualiser</td>
 	<td class="right"></td>
 </tr>
 <tr onmouseover="JavaScript:MouseOnArrow(this, 'arrow2', 'link2');" onmouseout="JavaScript:MouseOutArrow(this, 'arrow2', 'link2');" onclick="GoPage('')" class="link">
 	<td class="left"></td>
-	<td id="link2" class="link"><img name="arrow2" src="../menu/arrowrightorange.png" width="14" height="13"> Personnaliser</td>
+	<td id="link2" class="link"><img name="arrow2" src="../menu/arrowrightorange.png" width="14" height="13" alt="" > Personnaliser</td>
 	<td class="right"></td>
 </tr>
 		</table>
@@ -498,7 +499,7 @@ function UpdateForm() {
 </tr>
 <tr class="titleselected" onclick="JavaScript:DisplayMenu('2');">
 	<td class="left"></td>
-	<td class="title"><img name="imgmenu2" src="../menu/collapse.png" width="12" height="12"> Livebox</td>
+	<td class="title"><img name="imgmenu2" src="../menu/collapse.png" width="12" height="12" alt="" > Livebox</td>
 	<td class="right"></td>
 </tr>
 	</table>
@@ -506,27 +507,27 @@ function UpdateForm() {
 		<table>
 <tr onmouseover="JavaScript:MouseOnArrow(this, 'arrow3', 'link3');" onmouseout="JavaScript:MouseOutArrow(this, 'arrow3', 'link3');" onclick="GoPage('')" class="link">
 	<td class="left"></td>
-	<td id="link3" class="link"><img name="arrow3" src="../menu/arrowrightorange.png" width="14" height="13"> Internet</td>
+	<td id="link3" class="link"><img name="arrow3" src="../menu/arrowrightorange.png" width="14" height="13" alt="" > Internet</td>
 	<td class="right"></td>
 </tr>
 <tr onmouseover="JavaScript:MouseOnArrow(this, 'arrow4', 'link4');" onmouseout="JavaScript:MouseOutArrow(this, 'arrow4', 'link4');" onclick="GoPage('')" class="link">
 	<td class="left"></td>
-	<td id="link4" class="link"><img name="arrow4" src="../menu/arrowrightorange.png" width="14" height="13"> Administration</td>
+	<td id="link4" class="link"><img name="arrow4" src="../menu/arrowrightorange.png" width="14" height="13" alt="" > Administration</td>
 	<td class="right"></td>
 </tr>
 <tr onmouseover="JavaScript:MouseOnArrow(this, 'arrow5', 'link5');" onmouseout="JavaScript:MouseOutArrow(this, 'arrow5', 'link5');" onclick="GoPage('')" class="link">
 	<td class="left"></td>
-	<td id="link5" class="link"><img name="arrow5" src="../menu/arrowrightorange.png" width="14" height="13"> Mode de sécurité</td>
+	<td id="link5" class="link"><img name="arrow5" src="../menu/arrowrightorange.png" width="14" height="13" alt="" > Mode de sécurité</td>
 	<td class="right"></td>
 </tr>
 <tr onclick="GoPage('')" class="linkselected">
 	<td class="left"></td>
-	<td class="link"><img name="arrow6" src="../menu/arrowrightwhite.png" width="14" height="13"> Paramètres WiFi</td>
+	<td class="link"><img name="arrow6" src="../menu/arrowrightwhite.png" width="14" height="13" alt="" > Paramètres WiFi</td>
 	<td class="right"></td>
 </tr>
 <tr onmouseover="JavaScript:MouseOnArrow(this, 'arrow7', 'link7');" onmouseout="JavaScript:MouseOutArrow(this, 'arrow7', 'link7');" onclick="GoPage('')" class="link">
 	<td class="left"></td>
-	<td id="link7" class="link"><img name="arrow7" src="../menu/arrowrightorange.png" width="14" height="13"> Paramètres avancés</td>
+	<td id="link7" class="link"><img name="arrow7" src="../menu/arrowrightorange.png" width="14" height="13" alt="" > Paramètres avancés</td>
 	<td class="right"></td>
 </tr>
 		</table>
@@ -539,7 +540,7 @@ function UpdateForm() {
 </tr>
 <tr class="title" onclick="JavaScript:DisplayMenu('3');">
 	<td class="left"></td>
-	<td class="title"><img name="imgmenu3" src="../menu/expand.png" width="12" height="12"> Services</td>
+	<td class="title"><img name="imgmenu3" src="../menu/expand.png" width="12" height="12" alt="" > Services</td>
 	<td class="right"></td>
 </tr>
 	</table>
@@ -547,17 +548,17 @@ function UpdateForm() {
 		<table>
 <tr onmouseover="JavaScript:MouseOnArrow(this, 'arrow8', 'link8');" onmouseout="JavaScript:MouseOutArrow(this, 'arrow8', 'link8');" onclick="GoPage('')" class="link">
 	<td class="left"></td>
-	<td id="link8" class="link"><img name="arrow8" src="../menu/arrowrightorange.png" width="14" height="13"> Téléphone</td>
+	<td id="link8" class="link"><img name="arrow8" src="../menu/arrowrightorange.png" width="14" height="13" alt="" > Téléphone</td>
 	<td class="right"></td>
 </tr>
 <tr onmouseover="JavaScript:MouseOnArrow(this, 'arrow9', 'link9');" onmouseout="JavaScript:MouseOutArrow(this, 'arrow9', 'link9');" onclick="GoPage('')" class="link">
 	<td class="left"></td>
-	<td id="link9" class="link"><img name="arrow9" src="../menu/arrowrightorange.png" width="14" height="13"> TV numérique</td>
+	<td id="link9" class="link"><img name="arrow9" src="../menu/arrowrightorange.png" width="14" height="13" alt="" > TV numérique</td>
 	<td class="right"></td>
 </tr>
 <tr onmouseover="JavaScript:MouseOnArrow(this, 'arrow10', 'link10');" onmouseout="JavaScript:MouseOutArrow(this, 'arrow10', 'link10');" onclick="GoPage('')" class="link">
 	<td class="left"></td>
-	<td id="link10" class="link"><img name="arrow10" src="../menu/arrowrightorange.png" width="14" height="13"> Livezoom</td>
+	<td id="link10" class="link"><img name="arrow10" src="../menu/arrowrightorange.png" width="14" height="13" alt="" > Livezoom</td>
 	<td class="right"></td>
 </tr>
 		</table>
@@ -565,7 +566,7 @@ function UpdateForm() {
 	<table>
 		<tr>
 			<td class="bottomleft"></td>
-			<td class="bottom"><img src="../menu/vide.html" width="1" height="1"></td>
+			<td class="bottom"><img src="../menu/vide.html" width="1" height="1" alt="" ></td>
 			<td class="bottomright"></td>
 		</tr>
 	</table>
@@ -589,22 +590,22 @@ function UpdateForm() {
 		</tr>
 		<tr onclick="GoPage('')" class="linktools">
 			<td class="left"></td>
-			<td class="linktools"><img src="../menu/arrowrightorange.png" width="14" height="13"> Information système</td>
+			<td class="linktools"><img src="../menu/arrowrightorange.png" width="14" height="13" alt="" > Information système</td>
 			<td class="right"></td>
 		</tr>
 		<tr onclick="GoPage('')" class="linktools">
 			<td class="left"></td>
-			<td class="linktools"><img src="../menu/arrowrightorange.png" width="14" height="13"> Dépannage & Maintenance</td>
+			<td class="linktools"><img src="../menu/arrowrightorange.png" width="14" height="13" alt="" > Dépannage & Maintenance</td>
 			<td class="right"></td>
 		</tr>
 		<tr onclick="GoPage('')" class="linktools">
 			<td class="left"></td>
-			<td class="linktools"><img src="../menu/arrowrightorange.png" width="14" height="13"> Administration à distance</td>
+			<td class="linktools"><img src="../menu/arrowrightorange.png" width="14" height="13" alt="" > Administration à distance</td>
 			<td class="right"></td>
 		</tr>
 		<tr>
 			<td class="bottomleft"></td>
-			<td class="bottom"><img src="../menu/vide.html" width="1" height="1"></td>
+			<td class="bottom"><img src="../menu/vide.html" width="1" height="1" alt="" ></td>
 			<td class="bottomright"></td>
 		</tr>
 	</table>
@@ -617,7 +618,7 @@ function UpdateForm() {
 <table class="contener">
 	<tr>
 		<td class="topleft"></td>
-		<td class="top"><img src="../menu/top.gif" height="8"></td>
+		<td class="top"><img src="../menu/top.gif" height="8" alt="" ></td>
 		<td class="topright"></td>
 	</tr>
 	<tr>
@@ -719,7 +720,7 @@ function UpdateForm() {
 </tr>
 <tr>
 	<td>Clef de sécurité :</td>
-	<td width="50%"><input type="text" name="cle" size="26" value=""  style="width: 260px"></td>
+	<td width="50%"><input type="text" name="cle" size="26" value="" style="width: 260px"></td>
 </tr>
 <tr>
 <td>Confirmation : </td>
@@ -729,7 +730,7 @@ function UpdateForm() {
 <button>Valider</button></td></tr>
 <tr>
 <div class="block" id="aide">
-<img src="aide.jpg" width="105" height="105" alt="aide"></a><tr>
+<img src="aide.jpg" width="105" height="105" alt="aide" alt="" ></a><tr>
 <br />
 
 <p><b>Appairage :</b></p>
@@ -746,11 +747,11 @@ function UpdateForm() {
 <table width="100%">
 <tr>
 	<td>Activer le Wifi Easy pairing :</td>
-	<td colspan="2" width="50%"><input type="checkbox"  name="easypairing" value="1" onchange="UpdateForm()" onclick="UpdateForm()" title="Cocher pour activer" checked></td>
+	<td colspan="2" width="50%"><input type="checkbox" name="easypairing" value="1" onchange="UpdateForm()" onclick="UpdateForm()" title="Cocher pour activer" checked></td>
 </tr>
 <tr>
 	<td>Activer le WPS pairing :</td>
-	<td colspan="2" width="50%"><input type="checkbox"  name="wpspairing" value="1" onchange="UpdateForm()" onclick="UpdateForm()" title="Cocher pour activer" checked></td>
+	<td colspan="2" width="50%"><input type="checkbox" name="wpspairing" value="1" onchange="UpdateForm()" onclick="UpdateForm()" title="Cocher pour activer" checked></td>
 </tr>
 <tr id="wps_info1" style="display: ">
 	<td>Le PIN code de l'équipement WPS en 8 caractères :</td>
@@ -778,7 +779,7 @@ function UpdateForm() {
 												</tr>
 												<tr>
 													<td class="bottomleft"></td>
-													<td class="bottom"><img src="../menu/vide.html" width="1" height="1"></td>
+													<td class="bottom"><img src="../menu/vide.html" width="1" height="1" alt="" ></td>
 													<td class="bottomright"></td>
 												</tr>
 											</table>
@@ -806,7 +807,7 @@ function UpdateForm() {
 												</tr>
 												<tr>
 													<td class="bottomleft"></td>
-													<td class="bottom"><img src="../menu/vide.html" width="1" height="1"></td>
+													<td class="bottom"><img src="../menu/vide.html" width="1" height="1" alt="" ></td>
 													<td class="bottomright"></td>
 												</tr>
 											</table>
@@ -815,17 +816,17 @@ function UpdateForm() {
 <div id="array">
 <table class="array" style="width: 695px;">
 <tr>
-	<td style="width: 9px;" class="sep"><img src="t2_top_left.gif" width="9" height="10" /></td>	
+	<td style="width: 9px;" class="sep"><img src="t2_top_left.gif" width="9" height="10" / alt="" ></td>	
 	<td style="width: 160px" class="atop"></td>
-	<td style="width: 12px;" class="sep"><img src="t2_top_colsep.gif" width="12" height="10" /></td>
+	<td style="width: 12px;" class="sep"><img src="t2_top_colsep.gif" width="12" height="10" / alt="" ></td>
 	<td style="width: 160px" class="atop"></td>
-	<td style="width: 12px;" class="sep"><img src="t2_top_colsep.gif" width="12" height="10" /></td>
+	<td style="width: 12px;" class="sep"><img src="t2_top_colsep.gif" width="12" height="10" / alt="" ></td>
 	<td style="width: 160px;" class="atop"></td>
-	<td style="width: 12px;" class="sep"><img src="t2_top_colsep.gif" width="12" height="10" /></td>
+	<td style="width: 12px;" class="sep"><img src="t2_top_colsep.gif" width="12" height="10" / alt="" ></td>
 	<td style="width: 60px;" class="atop"></td>
-	<td style="width: 12px;" class="sep"><img src="t2_top_colsep.gif" width="12" height="10" /></td>
+	<td style="width: 12px;" class="sep"><img src="t2_top_colsep.gif" width="12" height="10" / alt="" ></td>
 	<td style="width: 90px;" class="atop"></td>
-	<td style="width: 8px;" class="sep"><img src="t2_top_right.gif" width="8" height="10" /></td>
+	<td style="width: 8px;" class="sep"><img src="t2_top_right.gif" width="8" height="10" / alt="" ></td>
 </tr>
 <tr class="ahead">
 	<td class="aleft"></td>
@@ -850,9 +851,9 @@ function UpdateForm() {
 	<td class="amid"></td>
 	<td>Non disponible</td>
 	<td class="amid"></td>
-	<td><img src="../hardware/connection/wifi_enable.gif" width="30" height="20" title="Connecté"></td>
+	<td><img src="../hardware/connection/wifi_enable.gif" width="30" height="20" title="Connecté" alt="" ></td>
 	<td class="amid"></td>
-	<td><img src="../button/poubelle-disable.jpg" width="23" height="23"></td>
+	<td><img src="../button/poubelle-disable.jpg" width="23" height="23" alt="" ></td>
 	<td class="aright"></td>
 </tr>
 
@@ -865,7 +866,7 @@ function UpdateForm() {
 	<td class="amid"></td>
 	<td>&nbsp;</td>
 	<td class="amid"></td>
-	<td><a href="JavaScript:RemoveNewLine();" title="Supprimer l'équipement"><img src="../button/poubelle.jpg" width="23" height="23"></a></td>
+	<td><a href="JavaScript:RemoveNewLine();" title="Supprimer l'équipement"><img src="../button/poubelle.jpg" width="23" height="23" alt="" ></a></td>
 	<td class="aright"></td>
 </tr>
 
