@@ -106,7 +106,7 @@ wpaxfuzz_set_fuzz_mode() {
   )
 
   io_query_choice "$WPAxFuzzSelectModeQuery" choices[@]
-  
+
   case "$IOQueryChoice" in
     "$WPAxFuzzModeManagement") WPAxFuzzModeArg="1";;
     "$WPAxFuzzModeSAE") WPAxFuzzModeArg="2";;
@@ -220,22 +220,41 @@ wpaxfuzz_run_daemon() {
   sed -i "s/\"ATTACKING_INTERFACE\":\"[^\"]*\"/\"ATTACKING_INTERFACE\":\"$monInterface\"/" "$WPAxFuzzConfigPath"
   sed -i "s/\"MONITORING_INTERFACE\":\"[^\"]*\"/\"MONITORING_INTERFACE\":\"$monInterface\"/" "$WPAxFuzzConfigPath"
 
-  # Run WPAxFuzz
-  cd "$WPAxFuzzPath"
-  
-  # Create expect-style input based on mode
-  local inputFile="$FLUXIONWorkspacePath/wpaxfuzz_input.txt"
-  echo "$WPAxFuzzModeArg" > "$inputFile"
-  if [ "$WPAxFuzzModeArg" = "1" ] || [ "$WPAxFuzzModeArg" = "3" ] || [ "$WPAxFuzzModeArg" = "4" ]; then
-    echo "$WPAxFuzzStdRandom" >> "$inputFile"
-  fi
+  # Create a startup script that shows config info then runs WPAxFuzz interactively
+  local startupScript="$FLUXIONWorkspacePath/wpaxfuzz_start.sh"
+  cat > "$startupScript" << STARTEOF
+#!/bin/bash
+cd '$WPAxFuzzPath'
+echo ""
+echo "=============================================="
+echo "  WPAxFuzz Configuration (from Fluxion)"
+echo "=============================================="
+echo "  Target AP:    $FluxionTargetSSID"
+echo "  Target MAC:   $FluxionTargetMAC"
+echo "  Channel:      $FluxionTargetChannel"
+echo "  Interface:    $monInterface"
+echo "=============================================="
+echo ""
+echo "Config file has been auto-generated."
+echo "Select your fuzzing mode from the menu below."
+echo ""
+echo "Press Enter to continue..."
+read
+python3 fuzz.py
+echo ""
+echo "WPAxFuzz finished. Press Enter to close..."
+read
+STARTEOF
+  chmod +x "$startupScript"
 
-  xterm -hold -title "WPAxFuzz - $WPAxFuzzMode" \
+  # Run WPAxFuzz in xterm interactively
+  xterm -hold -title "WPAxFuzz - Wi-Fi Fuzzer" \
     -bg "#000000" -fg "#00FF00" \
-    -e "cd '$WPAxFuzzPath' && python3 fuzz.py < '$inputFile'" &
+    -geometry 100x40 \
+    -e "$startupScript" &
   WPAxFuzzXtermPID=$!
 
-  # Wait for xterm to close or parent to signal abort
+  # Wait for xterm to close
   wait $WPAxFuzzXtermPID 2>/dev/null
 
   # Cleanup
@@ -279,10 +298,9 @@ prep_attack() {
 
   IOUtilsHeader="wpaxfuzz_header"
 
+  # Only need to select the interface - WPAxFuzz handles mode selection
   local sequence=(
     "set_attack_interface"
-    "set_fuzz_mode"
-    "set_mode_type"
   )
 
   if ! fluxion_do_sequence wpaxfuzz sequence[@]; then
