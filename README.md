@@ -1,37 +1,52 @@
-![Fluxion logo](https://github.com/FluxionNetwork/fluxion/raw/master/logos/logo.jpg)
-
-THIS IS A FORK OF FLUXION. I HAVE ADDED SOME VERY COOL FEATURES, ONE OF WHICH MAKES THE ODDS OF SUCCESS VERY VERY HIGH 
-
-# ADDED FEATURE #1
-<br>
-the ability to use multiple dongles for scanning SSID's. It then combines the output into one list (really just a neat idea)
-
-# ADDED FEATURE #2
-<br>
-This one is a game changer. Added a legitimate iOS captive portal that looks exactly like the user is connecting to their actual SSID instead of some fake html portal. This increases the chances of the owner believing they are logging into their actual wifi access point 3 fold. its #51 in the captive portal options.
-<br>
-------------------------------------------------------------------------------------------------------------------------------------
+![Fuxion logo](https://github.com/FluxionNetwork/fluxion/raw/master/logos/logo.jpg)
 
 # Fluxion is the future of MITM WPA attacks
 Fluxion is a security auditing and social-engineering research tool. It is a remake of linset by vk496 with (hopefully) fewer bugs and more functionality. The script attempts to retrieve the WPA/WPA2 key from a target access point by means of a social engineering (phishing) attack. It's compatible with the latest release of Kali (rolling). Fluxion's attacks' setup is mostly manual, but experimental auto-mode handles some of the attacks' setup parameters. Read the [FAQ](https://github.com/FluxionNetwork/fluxion/wiki/FAQ) before requesting issues.
 
-If you need quick help, fluxion is also available on gitter. You can talk with us on [Gitter](https://gitter.im/FluxionNetwork/Lobby) or on [Discord](https://discord.gg/G43gptk).
+If you need quick help, you can talk with us on [Discord](https://discord.gg/G43gptk).
 ## Installation
 Read [here](https://github.com/FluxionNetwork/fluxion/wiki/Generate-ssh-keys) before you do the following steps.
 <br>
-**Download this revision**
+**Download the latest revision**
 ```
-git clone https://github.com/yoy123/fluxion-4.10.git
+git clone git@github.com:FluxionNetwork/fluxion.git
 
+# Or if you prefer https 
+
+git clone https://www.github.com/FluxionNetwork/fluxion.git
 ```
 **Switch to tool's directory**
 ```
 cd fluxion 
 ```
-**Run fluxion (missing dependencies will be auto-installed)**
+**Run fluxion (it will check dependencies and prompt to install any that are missing)**
 ```
-sudo ./fluxion.sh
+./fluxion.sh
 ```
+
+**To install/check dependencies only without running attacks**
+```
+./fluxion.sh -i
+```
+
+**Fluxion is also available in arch** 
+```
+cd bin/arch
+makepkg
+```
+
+or using the blackarch repo
+```
+pacman -S fluxion
+```
+
+## :scroll: Changelog
+Fluxion is actively maintained with new features, improvements, and bugfixes.
+Be sure to check out the [changelog here](https://github.com/FluxionNetwork/fluxion/commits/master).
+
+## ![Octocat](https://github.githubassets.com/images/icons/emoji/octocat.png "Octocat") How to contribute
+All contributions are welcome! Code, documentation, graphics, or even design suggestions are welcome; use GitHub to its fullest. Submit pull requests, contribute tutorials or other wiki content -- whatever you have to offer, it'll be appreciated but please follow the [style guide](https://github.com/FluxionNetwork/fluxion/wiki/Code-style-guide).
+
 ## :book: How it works
 * Scan for a target wireless network.
 * Launch the `Handshake Snooper` attack.
@@ -49,20 +64,19 @@ sudo ./fluxion.sh
 
 ## :heavy_exclamation_mark: Requirements
 
-A Linux-based operating system. We recommend Kali Linux 2019.4. 2 external wifi cards are required.
+A Linux-based operating system. We recommend Kali Linux 2025.4. An external wifi card is recommended.
 
-## :octocat: Credits
+## ![Octocat](https://github.githubassets.com/images/icons/emoji/octocat.png "Octocat") Credits
 1. l3op - contributor
 2. dlinkproto - contributor
 3. vk496 - developer of linset
 4. Derv82 - @Wifite/2
 5. Princeofguilty - @webpages and @buteforce
-6. Photos for wiki @http://www.kalitutorials.net
-7. Ons Ali @wallpaper
-8. PappleTec @sites
-9. MPX4132 - Fluxion V3
-10. usama7628674 - contributor
-11. yoy123 - iOS captive portal + multi dongle scanning
+6. Ons Ali @wallpaper
+7. PappleTec @sites
+8. MPX4132 - Fluxion V3
+9. usama7628674 - contributor
+10. cjb900 - moderator
 
 ## Disclaimer
 * Authors do not own the logos under the `/attacks/Captive Portal/sites/` directory. Copyright Disclaimer Under Section 107 of the Copyright Act 1976, allowance is made for "fair use" for purposes such as criticism, comment, news reporting, teaching, scholarship, and research.
@@ -72,13 +86,10 @@ A Linux-based operating system. We recommend Kali Linux 2019.4. 2 external wifi 
 ## Note
 * Beware of sites pretending to be related with the Fluxion Project. These may be delivering malware.
 
-* Use Parrot OS for Less Errors.
-
 * For WN722n V2/V3 VISIT - https://github.com/aircrack-ng/rtl8188eus
 
-* Fluxion **DOES NOT WORK** on Linux Subsystem For Windows 10, because the subsystem doesn't allow access to network interfaces. Any Issue regarding the same would be **Closed Immediately**
+* Fluxion **DOES NOT WORK** on Windows Subsystem for Linux (WSL/WSL2), because the subsystem doesn't allow access to wireless network interfaces. Any issues regarding WSL will be **Closed Immediately**
 
 ## Links
 **Fluxion website:** https://fluxionnetwork.github.io/fluxion/ <br>
-**Discord:** https://discordapp.com/invite/G43gptk <br>
-**Gitter:** https://gitter.im/FluxionNetwork/Lobby <br>
+**Discord:** https://discord.gg/G43gptk <br>

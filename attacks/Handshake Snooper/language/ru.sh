@@ -5,10 +5,10 @@
 # >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
 HandshakeSnooperJammerInterfaceQuery="Выберите интерфейс для мониторинга и глушения."
 # >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
-HandshakeSnooperMethodQuery="Выберите метод получения рукопожатия"
-HandshakeSnooperMonitorMethodOption="Наблюдение (${CYel}пассивный$CClr)"
-HandshakeSnooperAireplayMethodOption="Деаутентификация с aireplay-ng (${CRed}агрессивный$CClr)"
-HandshakeSnooperMdk4MethodOption="Деаутентификация с mdk4 (${CRed} агрессивный $CClr)"
+HandshakeSnooperMethodQuery="Выберите метод для получения handshake"
+HandshakeSnooperMonitorMethodOption="Мониторинг (${CYel}пассивный$CClr)"
+HandshakeSnooperAireplayMethodOption="aireplay-ng deauthentication (${CRed}агрессивный$CClr)"
+HandshakeSnooperMdk4MethodOption="mdk4 deauthentication (${CRed}агрессивный$CClr)"
 # >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
 HandshakeSnooperVerifierIntervalQuery="Как часто проверять наличие рукопожатия?"
 HandshakeSnooperVerifierInterval30SOption="Каждые 30 секунд (${CGrn}рекомендуется${CClr})."

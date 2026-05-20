@@ -1,11 +1,11 @@
 ## Arguments table
 
-| Arguments  | Description |
+| Arguments  | Describtion |
 | ------------- | ------------- |
-| -a | Give an Attack  |
+| -a | Give a Attack  |
 | -e | Give a certain essid |
 | -b | Give a certain bssid |
-| -- | Marker is required | 
+| -- | Maker is required | 
 | -a | Access point interface |
 | -j | Jamming interface |
 | -x | Use xterm instead of tmux |
