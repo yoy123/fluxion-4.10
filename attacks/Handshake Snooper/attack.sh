@@ -17,7 +17,7 @@ handshake_snooper_header() {
 # ============= < Handshake Snooper Subroutines > ============ #
 # ============================================================ #
 handshake_snooper_arbiter_daemon() {
-  if [ "$#" -lt 1 -o "$HandshakeSnooperState" != "Running" ]; then
+  if [ ${#@} -lt 1 -o "$HandshakeSnooperState" != "Running" ]; then
     return 1;
   fi
 
@@ -29,7 +29,7 @@ handshake_snooper_arbiter_daemon() {
   handshake_snooper_arbiter_daemon_abort() {
     handshake_snooper_arbiter_daemon_state="aborted"
     if [ "$handshake_snooper_arbiter_daemon_viewerPID" ]; then
-      kill "$handshake_snooper_arbiter_daemon_viewerPID"
+      kill $handshake_snooper_arbiter_daemon_viewerPID
     fi
 
     handshake_snooper_stop_deauthenticator
@@ -72,6 +72,7 @@ handshake_snooper_arbiter_daemon() {
     now=$(env -i date '+%H:%M:%S')
     echo -e "[$now] $(io_dynamic_output $HandshakeSnooperSnoopingForNSecondsNotice)" >> \
       "$FLUXIONWorkspacePath/handshake_snooper.log"
+    fluxion_status "SNOOPING interval=${HandshakeSnooperVerifierInterval}s"
     sleep $HandshakeSnooperVerifierInterval &
     wait $! # Using wait to asynchronously catch flags while waiting.
 
@@ -129,6 +130,7 @@ handshake_snooper_arbiter_daemon() {
   # Move handshake to storage if one was acquired.
   mv "$FLUXIONWorkspacePath/capture/recent.cap" \
     "$FLUXIONPath/attacks/Handshake Snooper/handshakes/$FluxionTargetSSIDClean-$FluxionTargetMAC.cap"
+  fluxion_status "HANDSHAKE_CAPTURED path=$FLUXIONPath/attacks/Handshake Snooper/handshakes/$FluxionTargetSSIDClean-$FluxionTargetMAC.cap"
 
   # Write success flag so the main window polling loop can detect completion
   # and update its display without waiting for manual user input.
@@ -136,11 +138,11 @@ handshake_snooper_arbiter_daemon() {
 
   # Close the log viewer — success feedback is shown in the main window.
   if [ "$handshake_snooper_arbiter_daemon_viewerPID" ]; then
-    kill "$handshake_snooper_arbiter_daemon_viewerPID"
+    kill $handshake_snooper_arbiter_daemon_viewerPID
   fi
 
   # Signal parent process the verification terminated.
-  kill -s SIGABRT "$1"
+  kill -s SIGABRT $1
 }
 
 handshake_snooper_stop_captor() {
@@ -180,13 +182,13 @@ handshake_snooper_start_captor() {
   while [ ! "$HandshakeSnooperCaptorPID" ]; do
     sleep 1 &
     wait $!
-    HandshakeSnooperCaptorPID=$(pgrep -P "$parentPID")
+    HandshakeSnooperCaptorPID=$(pgrep -P $parentPID)
   done
 }
 
 handshake_snooper_stop_deauthenticator() {
   if [ "$HandshakeSnooperDeauthenticatorPID" ]; then
-    kill "$HandshakeSnooperDeauthenticatorPID" &> $FLUXIONOutputDevice
+    kill $HandshakeSnooperDeauthenticatorPID &> $FLUXIONOutputDevice
   fi
 
   HandshakeSnooperDeauthenticatorPID=""
@@ -270,10 +272,18 @@ handshake_snooper_set_deauthenticator_identifier() {
 }
 
 handshake_snooper_unset_jammer_interface() {
-  HandshakeSnooperJammerInterfaceOriginal=""
+  if [ ! "$HandshakeSnooperJammerInterface" ]; then
+    HandshakeSnooperJammerInterfaceOriginal=""
+    return 1
+  fi
 
-  if [ ! "$HandshakeSnooperJammerInterface" ]; then return 1; fi
+  # Deallocate the interface from FluxionInterfaces so it can be reused.
+  # Pass the renamed interface (e.g. fluxwl0) — that's the current real name
+  # in /sys/class/net, which fluxion_deallocate_interface needs for interface_is_real.
+  fluxion_deallocate_interface "$HandshakeSnooperJammerInterface" 2>/dev/null
+
   HandshakeSnooperJammerInterface=""
+  HandshakeSnooperJammerInterfaceOriginal=""
 
   # Check if we're automatically selecting the interface & skip
   # this one if so to take the user back properly.

