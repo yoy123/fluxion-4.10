@@ -460,9 +460,9 @@ fluxion_shutdown() {
     )
     if [ ! "$targetPID" ]; then continue; fi
     echo -e "$CWht[$CRed-$CWht] `io_dynamic_output $FLUXIONKillingProcessNotice`"
-    kill -s SIGKILL $targetPID &> $FLUXIONOutputDevice
+    kill -s SIGKILL "$targetPID" &> $FLUXIONOutputDevice
   done
-  kill -s SIGKILL $authService &> $FLUXIONOutputDevice
+  kill -s SIGKILL "$authService" &> $FLUXIONOutputDevice
 
   # Assure changes are reverted if installer was activated.
   if [ "$PackageManagerCLT" ]; then
@@ -535,7 +535,7 @@ fluxion_shutdown() {
 # ============================================================ #
 # The following will kill the parent proces & all its children.
 fluxion_kill_lineage() {
-  if [ ${#@} -lt 1 ]; then return -1; fi
+  if [ "$#" -lt 1 ]; then return -1; fi
 
   if [ ! -z "$2" ]; then
     local -r options=$1
@@ -548,15 +548,15 @@ fluxion_kill_lineage() {
   # Check if the match isn't a number, but a regular expression.
   # The following might
   if ! [[ "$match" =~ ^[0-9]+$ ]]; then
-    match=$(pgrep -f $match 2> $FLUXIONOutputDevice)
+    match=$(pgrep -f "$match" 2> $FLUXIONOutputDevice)
   fi
 
   # Check if we've got something to kill, abort otherwise.
   if [ -z "$match" ]; then return -2; fi
 
-  kill $options $(pgrep -P $match 2> $FLUXIONOutputDevice) \
+  kill $options $(pgrep -P "$match" 2> $FLUXIONOutputDevice) \
     &> $FLUXIONOutputDevice
-  kill $options $match &> $FLUXIONOutputDevice
+  kill $options "$match" &> $FLUXIONOutputDevice
 }
 
 
@@ -785,7 +785,7 @@ declare -rA FLUXIONUndoable=( \
 # Yes, I know, the identifiers are fucking ugly. If only we had
 # some type of mangling with bash identifiers, that'd be great.
 fluxion_do() {
-  if [ ${#@} -lt 2 ]; then return -1; fi
+  if [ "$#" -lt 2 ]; then return -1; fi
 
   local -r __fluxion_do__namespace=$1
   local -r __fluxion_do__identifier=$2
@@ -802,7 +802,7 @@ fluxion_do() {
 }
 
 fluxion_undo() {
-  if [ ${#@} -ne 1 ]; then return -1; fi
+  if [ "$#" -ne 1 ]; then return -1; fi
 
   local -r __fluxion_undo__namespace=$1
 
@@ -835,7 +835,7 @@ fluxion_undo() {
 }
 
 fluxion_done() {
-  if [ ${#@} -ne 1 ]; then return -1; fi
+  if [ "$#" -ne 1 ]; then return -1; fi
 
   local -r __fluxion_done__namespace=$1
 
@@ -845,7 +845,7 @@ fluxion_done() {
 }
 
 fluxion_done_reset() {
-  if [ ${#@} -ne 1 ]; then return -1; fi
+  if [ "$#" -ne 1 ]; then return -1; fi
 
   local -r __fluxion_done_reset__namespace=$1
 
@@ -853,7 +853,7 @@ fluxion_done_reset() {
 }
 
 fluxion_do_sequence() {
-  if [ ${#@} -ne 2 ]; then return 1; fi
+  if [ "$#" -ne 2 ]; then return 1; fi
 
   # TODO: Implement an alternative, better method of doing
   # what this subroutine does, maybe using for-loop iteFLUXIONWindowRation.
@@ -1642,7 +1642,7 @@ fluxion_get_target() {
     candidateAPInfo=$(echo "$candidateAPInfo" | sed -r "s/,\s*/,/g")
 
     local candidateMAC=$(echo "$candidateAPInfo" | cut -d , -f 1)
-    
+
     # For Handshake Snooper: skip networks with existing handshakes
     # For other attacks: mark them but don't skip
     if [ -n "${existingHandshakes[$candidateMAC]}" ]; then
@@ -1655,7 +1655,7 @@ fluxion_get_target() {
     local i=${#candidatesMAC[@]}
 
     candidatesMAC[i]="$candidateMAC"
-    
+
     # Look up vendor from kismet netxml file first, fallback to macchanger
     if [ -n "${vendorLookup[${candidatesMAC[i]}]}" ]; then
       local vendor="${vendorLookup[${candidatesMAC[i]}]}"
@@ -1699,7 +1699,7 @@ fluxion_get_target() {
       echo "${candidateAPInfo//\'/\\\'}" | cut -d , -f 14
     )
     candidatesESSID[i]=$(eval "echo \$'$sanitizedESSID'")
-    
+
     # Mark networks with existing handshakes with asterisk
     if [ "$FluxionAttack" != "Handshake Snooper" ] && [ -n "${existingHandshakes[$candidateMAC]}" ]; then
       candidatesHandshake[i]="*"
@@ -1831,7 +1831,7 @@ fluxion_get_target() {
   sandbox_remove_workfile "$FLUXIONWorkspacePath/dump*"
 
   FluxionTargetMakerID=${FluxionTargetMAC:0:8}
-  
+
   # If vendor wasn't found in kismet/list, fallback to macchanger lookup
   if [ -z "$FluxionTargetMaker" ]; then
     FluxionTargetMaker=$(
@@ -2157,7 +2157,7 @@ fluxion_target_set() {
 # =================== < Hash Subroutines > =================== #
 # Parameters: <hash path> <bssid> <essid> [channel [encryption [maker]]]
 fluxion_hash_verify() {
-  if [ ${#@} -lt 3 ]; then return 1; fi
+  if [ "$#" -lt 3 ]; then return 1; fi
 
   local hashPath=$1
 
@@ -2339,7 +2339,7 @@ fluxion_hash_set_path() {
 # Paramters: <defaultHashPath> <bssid> <essid>
 fluxion_hash_get_path() {
   # Assure we've got the bssid and the essid passed in.
-  if [ ${#@} -lt 2 ]; then return 1; fi
+  if [ "$#" -lt 2 ]; then return 1; fi
 
   while true; do
     fluxion_hash_unset_path
@@ -2498,7 +2498,7 @@ fluxion_prep_attack() {
   # Check if attack is targetted & set the attack target if so.
   if type -t attack_targetting_interfaces &> /dev/null; then
     echo "Calling fluxion_target_set" >> "$FLUXIONOutputDevice"
-    if ! fluxion_target_set; then 
+    if ! fluxion_target_set; then
       echo "fluxion_target_set FAILED" >> "$FLUXIONOutputDevice"
       return 3
     fi
@@ -2510,7 +2510,7 @@ fluxion_prep_attack() {
   echo "Checking for attack_tracking_interfaces" >> "$FLUXIONOutputDevice"
   if type -t attack_tracking_interfaces &> /dev/null; then
     echo "Calling fluxion_target_set_tracker" >> "$FLUXIONOutputDevice"
-    if ! fluxion_target_set_tracker; then 
+    if ! fluxion_target_set_tracker; then
       echo "fluxion_target_set_tracker FAILED" >> "$FLUXIONOutputDevice"
       return 4
     fi
