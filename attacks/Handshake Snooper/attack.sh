@@ -17,7 +17,7 @@ handshake_snooper_header() {
 # ============= < Handshake Snooper Subroutines > ============ #
 # ============================================================ #
 handshake_snooper_arbiter_daemon() {
-  if [ ${#@} -lt 1 -o "$HandshakeSnooperState" != "Running" ]; then
+  if [ "$#" -lt 1 -o "$HandshakeSnooperState" != "Running" ]; then
     return 1;
   fi
 
@@ -29,7 +29,7 @@ handshake_snooper_arbiter_daemon() {
   handshake_snooper_arbiter_daemon_abort() {
     handshake_snooper_arbiter_daemon_state="aborted"
     if [ "$handshake_snooper_arbiter_daemon_viewerPID" ]; then
-      kill $handshake_snooper_arbiter_daemon_viewerPID
+      kill "$handshake_snooper_arbiter_daemon_viewerPID"
     fi
 
     handshake_snooper_stop_deauthenticator
@@ -138,16 +138,16 @@ handshake_snooper_arbiter_daemon() {
 
   # Close the log viewer — success feedback is shown in the main window.
   if [ "$handshake_snooper_arbiter_daemon_viewerPID" ]; then
-    kill $handshake_snooper_arbiter_daemon_viewerPID
+    kill "$handshake_snooper_arbiter_daemon_viewerPID"
   fi
 
   # Signal parent process the verification terminated.
-  kill -s SIGABRT $1
+  kill -s SIGABRT "$1"
 }
 
 handshake_snooper_stop_captor() {
   if [ "$HandshakeSnooperCaptorPID" ]; then
-    kill -s SIGINT $HandshakeSnooperCaptorPID &> $FLUXIONOutputDevice
+    kill -s SIGINT "$HandshakeSnooperCaptorPID" &> $FLUXIONOutputDevice
   fi
 
   HandshakeSnooperCaptorPID=""
@@ -182,13 +182,13 @@ handshake_snooper_start_captor() {
   while [ ! "$HandshakeSnooperCaptorPID" ]; do
     sleep 1 &
     wait $!
-    HandshakeSnooperCaptorPID=$(pgrep -P $parentPID)
+    HandshakeSnooperCaptorPID=$(pgrep -P "$parentPID")
   done
 }
 
 handshake_snooper_stop_deauthenticator() {
   if [ "$HandshakeSnooperDeauthenticatorPID" ]; then
-    kill $HandshakeSnooperDeauthenticatorPID &> $FLUXIONOutputDevice
+    kill "$HandshakeSnooperDeauthenticatorPID" &> $FLUXIONOutputDevice
   fi
 
   HandshakeSnooperDeauthenticatorPID=""

@@ -224,7 +224,7 @@ shift # Remove "--" to prepare for attacks to read parameters.
 # Load user-defined preferences if there's an executable script.
 # If no script exists, prepare one for the user to store config.
 # WARNING: Preferences file must assure no redeclared constants.
-if [ $EUID -eq 0 ]; then
+if [ "$EUID" -eq 0 ]; then
   if [ -x "$FLUXIONPreferencesFile" ]; then
     source "$FLUXIONPreferencesFile"
   else
@@ -438,7 +438,7 @@ fluxion_startup() {
             fi
         fi
     done
-    if [ $FLUXIONMissingDependencies -eq 1 ]  && [ $FLUXIONSkipDependencies -eq 1 ];then
+    if [ "$FLUXIONMissingDependencies" -eq 1 ]  && [ "$FLUXIONSkipDependencies" -eq 1 ];then
         echo -e "\n\n"
         format_center_literals "[ ${CSRed}Missing dependencies: try to install using ./fluxion.sh -i${CClr} ]"
         echo -e "$FormatCenterLiterals"; sleep 3
@@ -493,9 +493,9 @@ fluxion_shutdown() {
     )
     if [ ! "$targetPID" ]; then continue; fi
     echo -e "$CWht[$CRed-$CWht] `io_dynamic_output $FLUXIONKillingProcessNotice`"
-    kill -s SIGKILL $targetPID &> $FLUXIONOutputDevice
+    kill -s SIGKILL "$targetPID" &> $FLUXIONOutputDevice
   done
-  kill -s SIGKILL $authService &> $FLUXIONOutputDevice
+  kill -s SIGKILL "$authService" &> $FLUXIONOutputDevice
 
   # Assure changes are reverted if installer was activated.
   if [ "$PackageManagerCLT" ]; then
@@ -568,7 +568,7 @@ fluxion_shutdown() {
 # ============================================================ #
 # The following will kill the parent proces & all its children.
 fluxion_kill_lineage() {
-  if [ ${#@} -lt 1 ]; then return -1; fi
+  if [ "$#" -lt 1 ]; then return -1; fi
 
   if [ ! -z "$2" ]; then
     local -r options=$1
@@ -581,15 +581,15 @@ fluxion_kill_lineage() {
   # Check if the match isn't a number, but a regular expression.
   # The following might
   if ! [[ "$match" =~ ^[0-9]+$ ]]; then
-    match=$(pgrep -f $match 2> $FLUXIONOutputDevice)
+    match=$(pgrep -f "$match" 2> $FLUXIONOutputDevice)
   fi
 
   # Check if we've got something to kill, abort otherwise.
   if [ -z "$match" ]; then return -2; fi
 
-  kill $options $(pgrep -P $match 2> $FLUXIONOutputDevice) \
+  kill $options $(pgrep -P "$match" 2> $FLUXIONOutputDevice) \
     &> $FLUXIONOutputDevice
-  kill $options $match &> $FLUXIONOutputDevice
+  kill $options "$match" &> $FLUXIONOutputDevice
 }
 
 
@@ -830,7 +830,7 @@ declare -rA FLUXIONUndoable=( \
 # Yes, I know, the identifiers are fucking ugly. If only we had
 # some type of mangling with bash identifiers, that'd be great.
 fluxion_do() {
-  if [ ${#@} -lt 2 ]; then return -1; fi
+  if [ "$#" -lt 2 ]; then return -1; fi
 
   local -r __fluxion_do__namespace=$1
   local -r __fluxion_do__identifier=$2
@@ -847,7 +847,7 @@ fluxion_do() {
 }
 
 fluxion_undo() {
-  if [ ${#@} -ne 1 ]; then return -1; fi
+  if [ "$#" -ne 1 ]; then return -1; fi
 
   local -r __fluxion_undo__namespace=$1
 
@@ -880,7 +880,7 @@ fluxion_undo() {
 }
 
 fluxion_done() {
-  if [ ${#@} -ne 1 ]; then return -1; fi
+  if [ "$#" -ne 1 ]; then return -1; fi
 
   local -r __fluxion_done__namespace=$1
 
@@ -890,7 +890,7 @@ fluxion_done() {
 }
 
 fluxion_done_reset() {
-  if [ ${#@} -ne 1 ]; then return -1; fi
+  if [ "$#" -ne 1 ]; then return -1; fi
 
   local -r __fluxion_done_reset__namespace=$1
 
@@ -898,7 +898,7 @@ fluxion_done_reset() {
 }
 
 fluxion_do_sequence() {
-  if [ ${#@} -ne 2 ]; then return 1; fi
+  if [ "$#" -ne 2 ]; then return 1; fi
 
   # TODO: Implement an alternative, better method of doing
   # what this subroutine does, maybe using for-loop iteFLUXIONWindowRation.
@@ -986,39 +986,7 @@ fluxion_unset_language() {
 
 fluxion_set_language() {
   if [ ! "$FluxionLanguage" ]; then
-    if [ "$FLUXIONAuto" ]; then
-      FluxionLanguage="en"
-    else
-      # Get all languages available.
-      local languageCodes
-      readarray -t languageCodes < <(ls -1 language | sed -E 's/\.sh//')
-
-      local languages
-      readarray -t languages < <(
-        head -n 3 language/*.sh |
-        grep -E "^# native: " |
-        sed -E 's/# \w+: //'
-      )
-
-      # Prepare choices array for io_query_choice
-      local choices=()
-      for i in "${!languageCodes[@]}"; do
-        choices+=("${languageCodes[i]} / ${languages[i]}")
-      done
-      choices+=("Exit")
-
-      io_query_choice "$FLUXIONVLine Select your language" choices[@]
-
-      # Handle exit selection
-      if [ "$IOQueryChoice" = "Exit" ]; then
-        fluxion_handle_exit
-      fi
-
-      # Extract language code from selection (format: "code / name")
-      FluxionLanguage=$(echo "$IOQueryChoice" | cut -d ' ' -f 1)
-
-      echo # Do not remove.
-    fi
+    FluxionLanguage="en"
   fi
 
   # Check if all language files are present for the selected language.
@@ -1384,7 +1352,7 @@ fluxion_get_interface() {
       FluxionInterfaceSelectedInfo="${interfacesAvailableInfo[0]}"
       break
     else
-      if [ $skipOption ]; then
+      if [ "$skipOption" ]; then
         interfacesAvailable+=("$FLUXIONGeneralSkipOption")
         interfacesAvailableColor+=("$CClr")
         interfacesAvailableBands+=("")
@@ -1692,7 +1660,7 @@ fluxion_get_target() {
     candidateAPInfo=$(echo "$candidateAPInfo" | sed -r "s/,\s*/,/g")
 
     local candidateMAC=$(echo "$candidateAPInfo" | cut -d , -f 1)
-    
+
     # For Handshake Snooper: skip networks with existing handshakes
     # For other attacks: mark them but don't skip
     if [ -n "${existingHandshakes[$candidateMAC]}" ]; then
@@ -1705,7 +1673,7 @@ fluxion_get_target() {
     local i=${#candidatesMAC[@]}
 
     candidatesMAC[i]="$candidateMAC"
-    
+
     # Look up vendor from kismet netxml file first, fallback to macchanger
     if [ -n "${vendorLookup[${candidatesMAC[i]}]}" ]; then
       local vendor="${vendorLookup[${candidatesMAC[i]}]}"
@@ -1749,7 +1717,7 @@ fluxion_get_target() {
       echo "${candidateAPInfo//\'/\\\'}" | cut -d , -f 14
     )
     candidatesESSID[i]=$(eval "echo \$'$sanitizedESSID'")
-    
+
     # Mark networks with existing handshakes with asterisk
     if [ "$FluxionAttack" != "Handshake Snooper" ] && [ -n "${existingHandshakes[$candidateMAC]}" ]; then
       candidatesHandshake[i]="*"
@@ -1758,7 +1726,7 @@ fluxion_get_target() {
     fi
 
     local power=${candidatesPower[i]}
-    if [ $power -eq -1 ]; then
+    if [ "$power" -eq -1 ]; then
       # airodump-ng's man page says -1 means unsupported value.
       candidatesQuality[i]="??"
     elif [ $power -le $FLUXIONNoiseFloor ]; then
@@ -1778,7 +1746,7 @@ fluxion_get_target() {
   # Check if all networks were filtered out
   if [ ${#candidatesMAC[@]} -eq 0 ]; then
     local emptyMessage=""
-    if [ $filteredCount -gt 0 ]; then
+    if [ "$filteredCount" -gt 0 ]; then
       emptyMessage="${CYel}All $filteredCount network(s) on this channel have existing handshakes.$CClr\n"
       emptyMessage+="${CYel}Please scan a different channel or delete existing handshakes.$CClr\n\n"
     else
@@ -1794,7 +1762,7 @@ fluxion_get_target() {
   local headerTitle="$FormatCenterLiterals\n\n"
 
   # Add notice if networks were filtered
-  if [ $filteredCount -gt 0 ]; then
+  if [ "$filteredCount" -gt 0 ]; then
     headerTitle+="${CBRed}Note: $filteredCount network(s) with existing handshakes were filtered$CClr\n\n"
   fi
 
@@ -1882,7 +1850,7 @@ fluxion_get_target() {
   sandbox_remove_workfile "$FLUXIONWorkspacePath/dump*"
 
   FluxionTargetMakerID=${FluxionTargetMAC:0:8}
-  
+
   # If vendor wasn't found in kismet/list, fallback to macchanger lookup
   if [ -z "$FluxionTargetMaker" ]; then
     FluxionTargetMaker=$(
@@ -1960,7 +1928,7 @@ fluxion_target_tracker_daemon() {
 
     # Exit code 124 means timeout expired (expected), 143 means SIGTERM (also from timeout)
     # Only abort on unexpected errors (not 0, 124, or 143)
-    if [ $error -ne 0 ] && [ $error -ne 124 ] && [ $error -ne 143 ]; then
+    if [ "$error" -ne 0 ] && [ "$error" -ne 124 ] && [ "$error" -ne 143 ]; then
       echo -e "[T-Tracker] ${CRed}Error:$CClr Operation aborted (code: $error)!" > $FLUXIONOutputDevice
       break
     fi
@@ -1978,19 +1946,19 @@ fluxion_target_tracker_daemon() {
     # Detect presence/absence transitions and signal the parent.
     if [ -z "$targetChannel" ] || [ "$targetChannel" = "-1" ]; then
       echo "[T-Tracker] Target not found or channel invalid, retrying..." > $FLUXIONOutputDevice
-      if [ $apPresent -ne 0 ]; then
+      if [ "$apPresent" -ne 0 ]; then
         apPresent=0
         echo "[T-Tracker] AP disappeared — signalling pause." > $FLUXIONOutputDevice
-        kill -SIGUSR1 $fluxionPID 2>/dev/null
+        kill -SIGUSR1 "$fluxionPID" 2>/dev/null
       fi
       continue
     fi
 
     # AP is visible — signal resume if it was previously absent.
-    if [ $apPresent -eq 0 ]; then
+    if [ "$apPresent" -eq 0 ]; then
       apPresent=1
       echo "[T-Tracker] AP reappeared — signalling resume." > $FLUXIONOutputDevice
-      kill -SIGUSR2 $fluxionPID 2>/dev/null
+      kill -SIGUSR2 "$fluxionPID" 2>/dev/null
     fi
 
     if [ "$targetChannel" -ne "$FluxionTargetChannel" ] 2>/dev/null; then
@@ -2215,7 +2183,7 @@ fluxion_target_set() {
 # =================== < Hash Subroutines > =================== #
 # Parameters: <hash path> <bssid> <essid> [channel [encryption [maker]]]
 fluxion_hash_verify() {
-  if [ ${#@} -lt 3 ]; then return 1; fi
+  if [ "$#" -lt 3 ]; then return 1; fi
 
   local hashPath=$1
 
@@ -2397,7 +2365,7 @@ fluxion_hash_set_path() {
 # Paramters: <defaultHashPath> <bssid> <essid>
 fluxion_hash_get_path() {
   # Assure we've got the bssid and the essid passed in.
-  if [ ${#@} -lt 2 ]; then return 1; fi
+  if [ "$#" -lt 2 ]; then return 1; fi
 
   while true; do
     fluxion_hash_unset_path
@@ -2567,7 +2535,7 @@ fluxion_prep_attack() {
   # Check if attack is targetted & set the attack target if so.
   if type -t attack_targetting_interfaces &> /dev/null; then
     echo "Calling fluxion_target_set" >> "$FLUXIONOutputDevice"
-    if ! fluxion_target_set; then 
+    if ! fluxion_target_set; then
       echo "fluxion_target_set FAILED" >> "$FLUXIONOutputDevice"
       return 3
     fi
@@ -2579,7 +2547,7 @@ fluxion_prep_attack() {
   echo "Checking for attack_tracking_interfaces" >> "$FLUXIONOutputDevice"
   if type -t attack_tracking_interfaces &> /dev/null; then
     echo "Calling fluxion_target_set_tracker" >> "$FLUXIONOutputDevice"
-    if ! fluxion_target_set_tracker; then 
+    if ! fluxion_target_set_tracker; then
       echo "fluxion_target_set_tracker FAILED" >> "$FLUXIONOutputDevice"
       return 4
     fi
