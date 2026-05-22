@@ -10,7 +10,9 @@ readonly FLUXIONPath=$(dirname $(readlink -f "$0"))
 readonly FLUXIONLibPath="$FLUXIONPath/lib"
 
 # Path to the temp. directory available to FLUXION & subscripts.
-readonly FLUXIONWorkspacePath="/tmp/fluxspace"
+# Randomized to prevent predictable /tmp/fluxspace exploitation.
+readonly FLUXIONWorkspacePath=$(mktemp -d /tmp/fluxspace.XXXXXXXXXX)
+chmod 700 "$FLUXIONWorkspacePath"
 readonly FLUXIONIPTablesBackup="$FLUXIONPath/iptables-rules"
 
 # Path to FLUXION's preferences file, to be loaded afterward.
@@ -1419,6 +1421,143 @@ fluxion_get_interface() {
   done
 }
 
+fluxion_get_interfaces_multi() {
+  if ! type -t "$1" &> /dev/null; then return 1; fi
+
+  if [ "$2" ]; then
+    local -r interfaceQuery="$2"
+  else
+    local -r interfaceQuery="$FLUXIONInterfaceQuery (multi-select)"
+  fi
+
+  FluxionInterfacesSelected=()
+
+  while true; do
+    fluxion_header
+
+    # Show currently selected interfaces
+    if [ ${#FluxionInterfacesSelected[@]} -gt 0 ]; then
+      echo -e "$FLUXIONVLine ${CGrn}Selected interfaces: ${FluxionInterfacesSelected[@]}$CClr"
+      echo
+    fi
+
+    local candidateInterfaces
+    readarray -t candidateInterfaces < <($1)
+    local interfacesAvailable=()
+    local interfacesAvailableInfo=()
+    local interfacesAvailableColor=()
+    local interfacesAvailableState=()
+
+    # Gather information from all available interfaces.
+    local candidateInterface
+    for candidateInterface in "${candidateInterfaces[@]}"; do
+      if [ ! "$candidateInterface" ]; then
+        continue
+      fi
+
+      interface_chipset "$candidateInterface"
+      interfacesAvailableInfo+=("$InterfaceChipset")
+
+      # If it has already been allocated, we can use it at will.
+      local candidateInterfaceAlt=${FluxionInterfaces["$candidateInterface"]}
+      if [ "$candidateInterfaceAlt" ]; then
+        candidateInterface="$candidateInterfaceAlt"
+      fi
+
+      interfacesAvailable+=("$candidateInterface")
+
+      # Check if already selected
+      local already_selected=0
+      for selected in "${FluxionInterfacesSelected[@]}"; do
+        if [ "$selected" = "$candidateInterface" ]; then
+          already_selected=1
+          break
+        fi
+      done
+
+      if [ $already_selected -eq 1 ]; then
+        interfacesAvailableColor+=("$CGrn")
+        interfacesAvailableState+=("[✓]")
+      else
+        interface_state "$candidateInterface"
+        if [ "$InterfaceState" = "up" ]; then
+          interfacesAvailableColor+=("$CPrp")
+          interfacesAvailableState+=("[-]")
+        else
+          interfacesAvailableColor+=("$CClr")
+          interfacesAvailableState+=("[ ]")
+        fi
+      fi
+    done
+
+    local doneOption="Done     (${#FluxionInterfacesSelected[@]} selected)"
+    interfacesAvailable+=(
+      "$doneOption"
+      "$FLUXIONGeneralBackOption"
+    )
+
+    interfacesAvailableColor+=(
+      "$CGrn"
+      "$CRed"
+    )
+
+    interfacesAvailableState+=(
+      ""
+      ""
+    )
+
+    interfacesAvailableInfo+=(
+      ""
+      ""
+    )
+
+    format_apply_autosize \
+      "$CRed[$CSYel%1d$CClr$CRed]%b %-8b %3s$CClr %-*.*s\n"
+
+    io_query_format_fields \
+      "$FLUXIONVLine $interfaceQuery" "$FormatApplyAutosize" \
+      interfacesAvailableColor[@] interfacesAvailable[@] \
+      interfacesAvailableState[@] interfacesAvailableInfo[@]
+
+    echo
+
+    local selected="${IOQueryFormatFields[1]}"
+
+    case "$selected" in
+      "$doneOption")
+        if [ ${#FluxionInterfacesSelected[@]} -eq 0 ]; then
+          echo -e "$FLUXIONVLine ${CRed}Please select at least one interface$CClr"
+          sleep 2
+          continue
+        fi
+        return 0;;
+      "$FLUXIONGeneralBackOption")
+        return -1;;
+      *)
+        # Toggle selection
+        local found=0
+        local new_selection=()
+        for iface in "${FluxionInterfacesSelected[@]}"; do
+          if [ "$iface" = "$selected" ]; then
+            found=1
+            # Skip this one (deselect)
+          else
+            new_selection+=("$iface")
+          fi
+        done
+
+        if [ $found -eq 0 ]; then
+          # Add to selection
+          FluxionInterfacesSelected+=("$selected")
+        else
+          # Update with removed item
+          FluxionInterfacesSelected=("${new_selection[@]}")
+        fi
+        ;;
+    esac
+  done
+}
+
 
 # ============== < Fluxion Target Subroutines > ============== #
 # Parameters: interface [ channel(s) [ band(s) ] ]
@@ -1505,12 +1644,144 @@ fluxion_target_get_candidates() {
   fi
 }
 
+# Parameters: channels band interface [interface ...]
+# Launches parallel airodump-ng windows for each interface, merges CSV results.
+# Return 1: No interfaces provided or invalid interface.
+# Return 4: No candidates detected after merge.
+fluxion_target_get_candidates_multi() {
+  local channels="$1"
+  local band="$2"
+  shift 2
+  local interfaces=("$@")
+
+  # Validate we have at least one interface
+  if [ ${#interfaces[@]} -eq 0 ]; then
+    echo "Error: No interfaces provided for multi-scan" >> $FLUXIONOutputDevice
+    return 1
+  fi
+
+  # Validate all interfaces are wireless
+  for iface in "${interfaces[@]}"; do
+    if ! interface_is_wireless "$iface"; then
+      echo "Error: $iface is not a wireless interface" >> $FLUXIONOutputDevice
+      return 1
+    fi
+  done
+
+  echo -e "$FLUXIONVLine $FLUXIONStartingScannerNotice"
+  echo -e "$FLUXIONVLine ${CGrn}Launching ${#interfaces[@]} scanner window(s): ${interfaces[*]}$CClr"
+  echo -e "$FLUXIONVLine $FLUXIONStartingScannerTip"
+
+  # Assure all previous scan results have been cleared.
+  sandbox_remove_workfile "$FLUXIONWorkspacePath/dump*"
+
+  # Build channel and band parameters
+  local channelParam="${channels:+--channel $channels}"
+  local bandParam="${band:+--band $band}"
+
+  # Launch a separate scanner window for each interface
+  local pids=()
+  local idx=0
+  for iface in "${interfaces[@]}"; do
+    local dumpPrefix="$FLUXIONWorkspacePath/dump-$iface"
+
+    # Position windows side by side based on index
+    local xpos=$((idx * 50))
+    local geometry="-geometry 120x30+${xpos}+0"
+
+    xterm -title "$FLUXIONScannerHeader [$iface]" $geometry \
+        -bg "#000000" -fg "#FFFFFF" -e \
+        "airodump-ng -Mat WPA $channelParam $bandParam -w \"$dumpPrefix\" $iface" 2> $FLUXIONOutputDevice &
+    pids+=($!)
+    ((idx++))
+  done
+
+  # Wait for all scanner windows to close
+  echo -e "$FLUXIONVLine ${CYel}Close all scanner windows when ready...$CClr"
+  for pid in "${pids[@]}"; do
+    wait $pid 2>/dev/null
+  done
+
+  echo -e "$FLUXIONVLine ${CGrn}All scanners closed. Merging results...$CClr"
+
+  # Merge results from all dump files
+  echo -e "$FLUXIONVLine $FLUXIONPreparingScannerResultsNotice"
+  local -r matchMAC="([A-F0-9][A-F0-9]:)+[A-F0-9][A-F0-9]"
+
+  # Collect all AP results, removing duplicates by BSSID (first field)
+  local allCandidates=""
+  local allClients=""
+
+  for iface in "${interfaces[@]}"; do
+    local csvFile="$FLUXIONWorkspacePath/dump-${iface}-01.csv"
+    if [ -f "$csvFile" ] && [ -s "$csvFile" ]; then
+      # Extract APs (15+ fields, valid MAC)
+      local aps=$(awk -F, "NF>=15 && length(\$1)==17 && \$1~/$matchMAC/ {print \$0}" "$csvFile")
+      if [ -n "$aps" ]; then
+        allCandidates+="$aps"$'\n'
+      fi
+      # Extract clients (7 fields, valid MAC)
+      local clients=$(awk -F, "NF==7 && length(\$1)==17 && \$1~/$matchMAC/ {print \$0}" "$csvFile")
+      if [ -n "$clients" ]; then
+        allClients+="$clients"$'\n'
+      fi
+    fi
+  done
+
+  # Remove duplicate APs (same BSSID) - keep first occurrence with best signal
+  # Sort by signal strength (field 9) descending, then unique by BSSID (field 1)
+  readarray FluxionTargetCandidates < <(
+    echo "$allCandidates" | grep -v '^$' | sort -t, -k9 -rn | awk -F, '!seen[$1]++'
+  )
+
+  # Remove duplicate clients (same MAC)
+  readarray FluxionTargetCandidatesClients < <(
+    echo "$allClients" | grep -v '^$' | awk -F, '!seen[$1]++'
+  )
+
+  # Merge all kismet.netxml files for vendor lookup
+  local mergedNetxml="$FLUXIONWorkspacePath/dump-01.kismet.netxml"
+  > "$mergedNetxml"
+  for iface in "${interfaces[@]}"; do
+    local netxmlFile="$FLUXIONWorkspacePath/dump-${iface}-01.kismet.netxml"
+    if [ -f "$netxmlFile" ]; then
+      cat "$netxmlFile" >> "$mergedNetxml"
+    fi
+  done
+
+  # Cleanup individual dump files (but keep merged netxml for vendor lookup)
+  for iface in "${interfaces[@]}"; do
+    sandbox_remove_workfile "$FLUXIONWorkspacePath/dump-${iface}*"
+  done
+
+  if [ ${#FluxionTargetCandidates[@]} -eq 0 ]; then
+    sandbox_remove_workfile "$FLUXIONWorkspacePath/dump*"
+    echo -e "$FLUXIONVLine $FLUXIONScannerDetectedNothingNotice"
+    sleep 3
+    return 4
+  fi
+
+  echo -e "$FLUXIONVLine ${CGrn}Found ${#FluxionTargetCandidates[@]} unique access points from ${#interfaces[@]} adapters$CClr"
+}
+
 
 fluxion_get_target() {
-  # Assure a valid wireless interface for scanning was given.
-  if [ ! "$1" ] || ! interface_is_wireless "$1"; then return 1; fi
+  # Parameters: use_multi_scan interface [interface ...]
+  local -r use_multi_scan=${1:-0}
+  shift
+  local scan_interfaces=("$@")
 
-  local -r interface=$1
+  # Validate we have at least one interface
+  if [ ${#scan_interfaces[@]} -eq 0 ]; then
+    echo "Error: No scanning interfaces provided" >> $FLUXIONOutputDevice
+    return 1
+  fi
+
+  # Use first interface as primary for single-interface operations
+  local -r interface="${scan_interfaces[0]}"
+
+  # Assure a valid wireless interface for scanning was given.
+  if ! interface_is_wireless "$interface"; then return 1; fi
 
   if [ "$FLUXIONAuto" ]; then
     # Auto mode: use --band if provided, otherwise infer from channel or default to 2.4GHz.
@@ -1527,28 +1798,18 @@ fluxion_get_target() {
     else
       local band="bg"
     fi
-    fluxion_target_get_candidates $interface "$FluxionTargetChannel" "$band"
+    if [ "$use_multi_scan" -eq 1 ]; then
+      fluxion_target_get_candidates_multi "$FluxionTargetChannel" "$band" "${scan_interfaces[@]}"
+    else
+      fluxion_target_get_candidates $interface "$FluxionTargetChannel" "$band"
+    fi
   else
-    interface_bands "$interface" 2>/dev/null
-    local __ifBands="${InterfaceBands:-unknown}"
-    local choices=()
-    if [[ "$__ifBands" == *"2.4GHz"* ]]; then
-      choices+=("$FLUXIONScannerChannelOptionAll (2.4GHz)")
-    fi
-    if [[ "$__ifBands" == *"5GHz"* ]]; then
-      choices+=("$FLUXIONScannerChannelOptionAll (5GHz)")
-    fi
-    if [[ "$__ifBands" == *"2.4GHz"* ]] && [[ "$__ifBands" == *"5GHz"* ]]; then
-      choices+=("$FLUXIONScannerChannelOptionAll (2.4GHz & 5Ghz)")
-    fi
-    if [ ${#choices[@]} -eq 0 ]; then
-      choices+=( \
-        "$FLUXIONScannerChannelOptionAll (2.4GHz)" \
-        "$FLUXIONScannerChannelOptionAll (5GHz)" \
-        "$FLUXIONScannerChannelOptionAll (2.4GHz & 5Ghz)" \
-      )
-    fi
-    choices+=("$FLUXIONScannerChannelOptionSpecific" "$FLUXIONGeneralBackOption")
+    local choices=( \
+      "$FLUXIONScannerChannelOptionAll (2.4GHz)" \
+      "$FLUXIONScannerChannelOptionAll (5GHz)" \
+      "$FLUXIONScannerChannelOptionAll (2.4GHz & 5Ghz)" \
+      "$FLUXIONScannerChannelOptionSpecific" "$FLUXIONGeneralBackOption"
+    )
 
     io_query_choice "$FLUXIONScannerChannelQuery" choices[@]
 
@@ -1556,14 +1817,26 @@ fluxion_get_target() {
 
     case "$IOQueryChoice" in
       "$FLUXIONScannerChannelOptionAll (2.4GHz)")
-        fluxion_target_get_candidates $interface "" "bg";;
-
+        if [ "$use_multi_scan" -eq 1 ]; then
+          fluxion_target_get_candidates_multi "" "bg" "${scan_interfaces[@]}"
+        else
+          fluxion_target_get_candidates $interface "" "bg"
+        fi
+        ;;
       "$FLUXIONScannerChannelOptionAll (5GHz)")
-        fluxion_target_get_candidates $interface "" "a";;
-
+        if [ "$use_multi_scan" -eq 1 ]; then
+          fluxion_target_get_candidates_multi "" "a" "${scan_interfaces[@]}"
+        else
+          fluxion_target_get_candidates $interface "" "a"
+        fi
+        ;;
       "$FLUXIONScannerChannelOptionAll (2.4GHz & 5Ghz)")
-        fluxion_target_get_candidates $interface "" "abg";;
-
+        if [ "$use_multi_scan" -eq 1 ]; then
+          fluxion_target_get_candidates_multi "" "abg" "${scan_interfaces[@]}"
+        else
+          fluxion_target_get_candidates $interface "" "abg"
+        fi
+        ;;
       "$FLUXIONScannerChannelOptionSpecific")
         fluxion_header
 
@@ -1581,7 +1854,6 @@ fluxion_get_target() {
         echo
 
         # Determine band based on channel number
-        # Channels 1-14 are 2.4GHz (band bg), 36+ are 5GHz (band a)
         local band=""
         local firstChannel=$(echo "$channels" | grep -oE '[0-9]+' | head -1)
         if [ -n "$firstChannel" ]; then
@@ -1592,8 +1864,12 @@ fluxion_get_target() {
           fi
         fi
 
-        fluxion_target_get_candidates $interface $channels "$band";;
-
+        if [ "$use_multi_scan" -eq 1 ]; then
+          fluxion_target_get_candidates_multi "$channels" "$band" "${scan_interfaces[@]}"
+        else
+          fluxion_target_get_candidates $interface $channels "$band"
+        fi
+        ;;
       "$FLUXIONGeneralBackOption")
         return -1;;
     esac
@@ -1833,17 +2109,35 @@ fluxion_get_target() {
     echo
 
     FluxionTargetMAC=${IOQueryFormatFields[8]}
-    FluxionTargetSSID=${IOQueryFormatFields[2]}
-    FluxionTargetChannel=${IOQueryFormatFields[6]//!/}
+    local selectedTargetIndex=""
+    local ti
+    for ti in "${!candidatesMAC[@]}"; do
+      if [ "${candidatesMAC[ti]}" = "$FluxionTargetMAC" ]; then
+        selectedTargetIndex=$ti
+        break
+      fi
+    done
+
+    if [ -n "$selectedTargetIndex" ]; then
+      FluxionTargetSSID=${candidatesESSID[$selectedTargetIndex]}
+      FluxionTargetChannel=${candidatesChannel[$selectedTargetIndex]//!/}
+    else
+      FluxionTargetSSID=${IOQueryFormatFields[2]}
+      FluxionTargetChannel=${IOQueryFormatFields[6]//!/}
+    fi
   fi
 
   if [ "$FLUXIONAuto" ]; then
     FluxionTargetEncryption=${candidatesSecurity[$autoTargetIndex]}
     FluxionTargetMaker=${candidatesVendor[$autoTargetIndex]}
   else
-    FluxionTargetEncryption=${IOQueryFormatFields[7]}
-    # Get vendor from the selection (IOQueryFormatFields[9] is the vendor column)
-    FluxionTargetMaker=${IOQueryFormatFields[9]}
+    if [ -n "$selectedTargetIndex" ]; then
+      FluxionTargetEncryption=${candidatesSecurity[$selectedTargetIndex]}
+      FluxionTargetMaker=${candidatesVendor[$selectedTargetIndex]}
+    else
+      FluxionTargetEncryption=${IOQueryFormatFields[7]}
+      FluxionTargetMaker=${IOQueryFormatFields[9]}
+    fi
   fi
 
   # Cleanup airodump-ng output files after vendor lookup is complete
@@ -1861,6 +2155,39 @@ fluxion_get_target() {
   fi
 
   FluxionTargetSSIDClean=$(fluxion_target_normalize_SSID)
+
+  # Some routers broadcast the same ESSID on multiple channels/bands.
+  # Detect those related BSSIDs so jammer setup can cover both radios.
+  FluxionTargetRelatedBSSIDs=()
+  local targetSSIDComparable
+  targetSSIDComparable=$(printf '%s' "$FluxionTargetSSID" | sed 's/^[[:space:]]*//; s/[[:space:]]*$//')
+
+  local i
+  for ((i=0; i<${#candidatesMAC[@]}; i++)); do
+    if [ "${candidatesMAC[i]}" = "$FluxionTargetMAC" ]; then continue; fi
+
+    local relatedESSIDComparable
+    relatedESSIDComparable=$(printf '%s' "${candidatesESSID[i]}" | sed 's/^[[:space:]]*//; s/[[:space:]]*$//')
+
+    if [ "$relatedESSIDComparable" = "$targetSSIDComparable" ]; then
+      local relatedMAC="${candidatesMAC[i]}"
+      local relatedChannel="${candidatesChannel[i]//[[:space:]]/}"
+
+      FluxionTargetRelatedBSSIDs+=("${relatedMAC}:${relatedChannel}")
+
+      local targetChannelTrimmed="${FluxionTargetChannel//[[:space:]]/}"
+      if [ "$relatedChannel" = "$targetChannelTrimmed" ]; then
+        echo -e "$FLUXIONVLine ${CGrn}Found related BSSID:$CClr $relatedMAC (same channel $relatedChannel)"
+      else
+        echo -e "$FLUXIONVLine ${CYel}Found related BSSID:$CClr $relatedMAC ${CRed}(channel $relatedChannel - DIFFERENT)$CClr"
+      fi
+    fi
+  done
+
+  if [ ${#FluxionTargetRelatedBSSIDs[@]} -gt 0 ]; then
+    echo -e "$FLUXIONVLine ${CCyn}Total: ${#FluxionTargetRelatedBSSIDs[@]} related BSSID(s) detected$CClr"
+    sleep 2
+  fi
 
   # We'll change a single hex digit from the target AP's MAC address.
   # This new MAC address will be used as the rogue AP's MAC address.
@@ -2091,6 +2418,8 @@ fluxion_target_unset() {
 
   FluxionTargetRogueMAC=""
 
+  FluxionTargetRelatedBSSIDs=()
+
   return 1 # To trigger undo-chain.
 }
 
@@ -2152,31 +2481,100 @@ fluxion_target_set() {
     sleep 3
   fi
 
-  echo "Starting fluxion_get_interface for targetting" >> $FLUXIONOutputDevice
-  if ! fluxion_get_interface attack_targetting_interfaces \
-    "$FLUXIONTargetSearchingInterfaceQuery"; then
-    echo "fluxion_get_interface failed for targetting" >> $FLUXIONOutputDevice
-    return 2
-  fi
-  if ! fluxion_allocate_interface $FluxionInterfaceSelected; then
-    return 3
+  interface_list_wireless
+  local available_wireless=()
+  local iface
+  for iface in "${InterfaceListWireless[@]}"; do
+    available_wireless+=("$iface")
+  done
+
+  local use_multi_scan=0
+  local scan_interfaces=()
+
+  if [ ${#available_wireless[@]} -gt 1 ] && [ ! "$FLUXIONAuto" ]; then
+    fluxion_header
+    echo -e "$FLUXIONVLine ${CCyn}Detected ${#available_wireless[@]} wireless interface(s):$CClr"
+    echo
+    for iface in "${available_wireless[@]}"; do
+      interface_chipset "$iface"
+      echo -e "     ${CGrn}->$CClr $iface ($InterfaceChipset)"
+    done
+    echo
+
+    local scan_mode_choices=( \
+      "Single interface scan" \
+      "Multi-interface parallel scan" \
+      "$FLUXIONGeneralBackOption"
+    )
+
+    io_query_choice "Select scanning mode" scan_mode_choices[@]
+    echo
+
+    case "$IOQueryChoice" in
+      "Multi-interface parallel scan")
+        use_multi_scan=1
+        ;;
+      "$FLUXIONGeneralBackOption")
+        return -1;;
+      *)
+        use_multi_scan=0
+        ;;
+    esac
   fi
 
-  # Use the selected interface directly if it exists, otherwise lookup in hash
-  local targetInterface
-  if interface_is_real "$FluxionInterfaceSelected"; then
-    targetInterface="$FluxionInterfaceSelected"
+  if [ $use_multi_scan -eq 1 ]; then
+    if ! fluxion_get_interfaces_multi attack_targetting_interfaces \
+      "$FLUXIONTargetSearchingInterfaceQuery (multi-select)"; then
+      return 2
+    fi
+
+    for iface in "${FluxionInterfacesSelected[@]}"; do
+      if ! fluxion_allocate_interface "$iface"; then
+        echo -e "$FLUXIONVLine ${CRed}Failed to allocate $iface$CClr"
+        return 2
+      fi
+
+      local allocated_name="${FluxionInterfaces[$iface]}"
+      if [ -n "$allocated_name" ]; then
+        scan_interfaces+=("$allocated_name")
+      else
+        scan_interfaces+=("$iface")
+      fi
+    done
+
+    if [ ${#scan_interfaces[@]} -eq 0 ]; then
+      echo -e "$FLUXIONVLine ${CRed}No interfaces selected$CClr"
+      return 2
+    fi
   else
-    targetInterface="${FluxionInterfaces[$FluxionInterfaceSelected]}"
+    echo "Starting fluxion_get_interface for targetting" >> $FLUXIONOutputDevice
+    if ! fluxion_get_interface attack_targetting_interfaces \
+      "$FLUXIONTargetSearchingInterfaceQuery"; then
+      echo "fluxion_get_interface failed for targetting" >> $FLUXIONOutputDevice
+      return 2
+    fi
+    if ! fluxion_allocate_interface $FluxionInterfaceSelected; then
+      return 3
+    fi
+
+    local targetInterface
+    local allocatedInterface="${FluxionInterfaces[$FluxionInterfaceSelected]}"
+    if [ -n "$allocatedInterface" ] && interface_is_wireless "$allocatedInterface"; then
+      targetInterface="$allocatedInterface"
+    else
+      targetInterface="$FluxionInterfaceSelected"
+    fi
+    scan_interfaces=("$targetInterface")
   fi
 
-  if ! fluxion_get_target "$targetInterface"; then
+  if ! fluxion_get_target "$use_multi_scan" "${scan_interfaces[@]}"; then
+    for iface in "${FluxionInterfacesSelected[@]:-$FluxionInterfaceSelected}"; do
+      if [ "$iface" ]; then
+        fluxion_deallocate_interface "$iface" 2>/dev/null
+      fi
+    done
     return 4
   fi
-
-  # Release the scan interface so attack steps (jammer, captor) can reuse it.
-  # The target info is already captured in FluxionTarget* variables.
-  fluxion_deallocate_interface "$targetInterface"
 }
 
 

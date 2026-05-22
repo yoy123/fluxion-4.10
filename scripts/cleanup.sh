@@ -48,8 +48,9 @@ for iface in $(ip link show | grep -oE 'fluxwl[^ :@]+'); do
 done
 
 echo "[*] Restoring ip_forward..."
-if [ -f /tmp/fluxspace/ip_forward ]; then
-	sysctl -w net.ipv4.ip_forward=$(cat /tmp/fluxspace/ip_forward) 2>/dev/null \
+workspace_ip_forward="${FLUXIONWorkspacePath:-/tmp/fluxspace}/ip_forward"
+if [ -f "$workspace_ip_forward" ]; then
+	sysctl -w net.ipv4.ip_forward=$(cat "$workspace_ip_forward") 2>/dev/null \
 		&& echo "    ip_forward restored from saved value"
 else
 	sysctl -w net.ipv4.ip_forward=0 2>/dev/null \
@@ -57,7 +58,8 @@ else
 fi
 
 echo "[*] Cleaning up workspace..."
-rm -rf /tmp/fluxspace/ 2>/dev/null && echo "    /tmp/fluxspace/ removed"
+rm -rf "${FLUXIONWorkspacePath:-}" /tmp/fluxspace.*/ 2>/dev/null
+echo "    workspace directories removed"
 
 echo "[*] Restoring iptables..."
 # Fluxion saves iptables backup at <fluxion_dir>/iptables-rules

