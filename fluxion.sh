@@ -119,6 +119,7 @@ trap fluxion_cleanup_workspace EXIT
 # ============================================================ #
 source "$FLUXIONLibPath/installer/InstallerUtils.sh"
 source "$FLUXIONLibPath/InterfaceUtils.sh"
+source "$FLUXIONLibPath/TargetUtils.sh"
 source "$FLUXIONLibPath/SandboxUtils.sh"
 source "$FLUXIONLibPath/FormatUtils.sh"
 source "$FLUXIONLibPath/ColorUtils.sh"
@@ -1631,7 +1632,8 @@ fluxion_target_get_candidates() {
   local -r matchMAC="([A-F0-9][A-F0-9]:)+[A-F0-9][A-F0-9]"
   readarray FluxionTargetCandidates < <(
     awk -F, "NF>=15 && length(\$1)==17 && \$1~/$matchMAC/ {print \$0}" \
-    "$FLUXIONWorkspacePath/dump-01.csv"
+    "$FLUXIONWorkspacePath/dump-01.csv" |
+    target_sort_candidates_by_signal
   )
   readarray FluxionTargetCandidatesClients < <(
     awk -F, "NF==7 && length(\$1)==17 && \$1~/$matchMAC/ {print \$0}" \
@@ -1736,10 +1738,11 @@ fluxion_target_get_candidates_multi() {
     fi
   done
 
-  # Remove duplicate APs (same BSSID) - keep first occurrence with best signal
-  # Sort by signal strength (field 9) descending, then unique by BSSID (field 1)
+  # Remove duplicate APs (same BSSID) after sorting, keeping the strongest signal.
   readarray FluxionTargetCandidates < <(
-    echo "$allCandidates" | grep -v '^$' | sort -t, -k9 -rn | awk -F, '!seen[$1]++'
+    printf '%s' "$allCandidates" |
+    target_sort_candidates_by_signal |
+    awk -F, '!seen[$1]++'
   )
 
   # Remove duplicate clients (same MAC)
@@ -3282,7 +3285,8 @@ fluxion_scan_only() {
   local candidates
   readarray -t candidates < <(
     awk -F, "NF>=15 && length(\$1)==17 && \$1~/$matchMAC/ {print \$0}" \
-    "$FLUXIONWorkspacePath/dump-01.csv"
+    "$FLUXIONWorkspacePath/dump-01.csv" |
+    target_sort_candidates_by_signal
   )
   local clients
   readarray -t clients < <(
