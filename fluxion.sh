@@ -9,10 +9,6 @@ readonly FLUXIONPath=$(dirname $(readlink -f "$0"))
 # Path to directory containing the FLUXION library (scripts).
 readonly FLUXIONLibPath="$FLUXIONPath/lib"
 
-# Path to the temp. directory available to FLUXION & subscripts.
-# Randomized to prevent predictable /tmp/fluxspace exploitation.
-readonly FLUXIONWorkspacePath=$(mktemp -d /tmp/fluxspace.XXXXXXXXXX)
-chmod 700 "$FLUXIONWorkspacePath"
 readonly FLUXIONIPTablesBackup="$FLUXIONPath/iptables-rules"
 
 # Path to FLUXION's preferences file, to be loaded afterward.
@@ -100,9 +96,21 @@ if [ $? -ne 4 ]; then
 fi
 
 # =============== < Working Directory Check > ================ #
-if ! mkdir -p "$FLUXIONWorkspacePath" &> /dev/null; then
+# Randomize the workspace to prevent predictable /tmp paths.
+if ! FLUXIONWorkspacePath=$(mktemp -d /tmp/fluxspace.XXXXXXXXXX); then
   echo "\\033[31mAborted, can't generate a workspace directory.\\033[0m"; exit 6
 fi
+readonly FLUXIONWorkspacePath
+chmod 700 "$FLUXIONWorkspacePath"
+
+fluxion_cleanup_workspace() {
+  local cleanupMode="${1:-}"
+  if [[ -n "${FLUXIONWorkspacePath:-}" && -d "$FLUXIONWorkspacePath" &&
+    ( "$cleanupMode" = "force" || -z "${FLUXIONDebug:-}" ) ]]; then
+    rm -rf -- "$FLUXIONWorkspacePath"
+  fi
+}
+trap fluxion_cleanup_workspace EXIT
 
 # Once sanity check is passed, we can start to load everything.
 

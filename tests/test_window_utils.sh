@@ -109,8 +109,21 @@ FLUXIONDisplayMode="xterm"  # xterm mode cleanup is a no-op
 fluxion_window_cleanup
 pass "Cleanup ran without error (xterm mode)"
 
-# ---- Test 7: Background window open in xterm mode (stub test) ----
-echo "Test 7: Background window open function signature"
+# ---- Test 7: Headless foreground execution preserves quoting ----
+echo "Test 7: Headless foreground execution preserves quoting"
+FLUXIONScanOnly=1
+headlessOutput="$FLUXIONWorkspacePath/headless-output"
+fluxion_window_open "" "Headless test" "" "#000000" "#FFFFFF" \
+	"printf '<%s>\n' 'a  b' > '$headlessOutput'"
+if [ "$(cat "$headlessOutput")" = "<a  b>" ]; then
+	pass "Headless command quoting was preserved"
+else
+	fail "Headless command quoting was changed"
+fi
+FLUXIONScanOnly=""
+
+# ---- Test 8: Background window open in xterm mode (stub test) ----
+echo "Test 8: Background window open function signature"
 # Test that the function exists and accepts the right number of params
 if type -t fluxion_window_open &>/dev/null; then
 	pass "fluxion_window_open is defined"
