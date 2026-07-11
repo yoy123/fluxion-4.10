@@ -400,6 +400,8 @@ handshake_snooper_unset_related_bssid_jammers() {
 handshake_snooper_available_jammer_interfaces() {
   interface_list_wireless
   local interface
+  local mappedInterface
+  local relatedJammer
   for interface in "${InterfaceListWireless[@]}"; do
     if [ "$interface" = "$HandshakeSnooperJammerInterface" ] || \
        [ "$interface" = "$HandshakeSnooperJammerInterfaceOriginal" ] || \
@@ -407,11 +409,22 @@ handshake_snooper_available_jammer_interfaces() {
       continue
     fi
 
-    local mappedInterface="${FluxionInterfaces[$interface]}"
-    if [ "$mappedInterface" = "$HandshakeSnooperJammerInterface" ] || \
-       [ "$mappedInterface" = "$FluxionTargetTrackerInterface" ]; then
+    mappedInterface="${FluxionInterfaces[$interface]}"
+    if [ -n "$mappedInterface" ] && \
+       { [ "$mappedInterface" = "$HandshakeSnooperJammerInterface" ] || \
+         { [ -n "$FluxionTargetTrackerInterface" ] && \
+           [ "$mappedInterface" = "$FluxionTargetTrackerInterface" ]; }; }; then
       continue
     fi
+
+    for relatedJammer in "${HandshakeSnooperRelatedBSSIDJammers[@]}"; do
+      if [ -n "$relatedJammer" ] && \
+         { [ "$interface" = "$relatedJammer" ] || \
+           [ "$mappedInterface" = "$relatedJammer" ] || \
+           [ "${FluxionInterfaces[$relatedJammer]}" = "$interface" ]; }; then
+        continue 2
+      fi
+    done
 
     echo "$interface"
   done
