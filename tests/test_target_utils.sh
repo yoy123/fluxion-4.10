@@ -33,6 +33,10 @@ candidate_order() {
 	echo "${bssids[*]}"
 }
 
+station() {
+	printf '%s,first,last,-60,10,%s,\n' "$1" "$2"
+}
+
 echo "=== TargetUtils.sh Test Suite ==="
 echo
 
@@ -94,6 +98,39 @@ if [ "${#sortedCandidates[@]}" -eq 1 ] &&
 	pass "Empty records are ignored"
 else
 	fail "Empty records were returned"
+fi
+
+echo "Test 5: IoT manufacturer matching is conservative"
+if target_vendor_is_iot "Tuya Smart Inc." &&
+		! target_vendor_is_iot "Apple, Inc."; then
+	pass "Known IoT vendors match while general vendors do not"
+else
+	fail "IoT manufacturer matching is incorrect"
+fi
+
+echo "Test 6: Observed clients are counted per network and de-duplicated"
+target_lookup_oui_vendor() {
+	case "${1^^}" in
+		10:00:00:00:00:01) TargetOUIVendor="Tuya Smart Inc." ;;
+		10:00:00:00:00:02) TargetOUIVendor="Apple, Inc." ;;
+		10:00:00:00:00:03) TargetOUIVendor="Espressif Inc." ;;
+		*) TargetOUIVendor=""; return 1 ;;
+	esac
+}
+
+networkBSSID="AA:BB:CC:DD:EE:FF"
+target_count_observed_clients "$networkBSSID" \
+	"$(station "10:00:00:00:00:01" "$networkBSSID")" \
+	"$(station "10:00:00:00:00:02" "$networkBSSID")" \
+	"$(station "10:00:00:00:00:03" "$networkBSSID")" \
+	"$(station "10:00:00:00:00:01" "$networkBSSID")" \
+	"$(station "10:00:00:00:00:01" "11:22:33:44:55:66")" \
+	"$(station "10:00:00:00:00:04" "(not associated)")"
+if [ "$TargetObservedClientCount" -eq 3 ] &&
+		[ "$TargetIoTClientCount" -eq 2 ]; then
+	pass "Associated clients and IoT subset are counted correctly"
+else
+	fail "Observed or IoT client count is incorrect"
 fi
 
 echo

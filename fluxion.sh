@@ -1891,6 +1891,7 @@ fluxion_get_target() {
 
   local candidatesMAC=()
   local candidatesClientsCount=()
+  local candidatesIoTCount=()
   local candidatesChannel=()
   local candidatesSecurity=()
   local candidatesSignal=()
@@ -1981,10 +1982,10 @@ fluxion_get_target() {
       )
       # Leave empty if no vendor found (don't show "Unknown")
     fi
-    candidatesClientsCount[i]=$(
-      echo "${FluxionTargetCandidatesClients[@]}" |
-      grep -c "${candidatesMAC[i]}"
-    )
+    target_count_observed_clients "$candidateMAC" \
+      "${FluxionTargetCandidatesClients[@]}"
+    candidatesClientsCount[i]=$TargetObservedClientCount
+    candidatesIoTCount[i]=$TargetIoTClientCount
     local __ch=$(echo "$candidateAPInfo" | cut -d , -f 4 | tr -d ' ')
     if [ "$__ch" -ge 52 -a "$__ch" -le 64 ] 2>/dev/null || \
        [ "$__ch" -ge 100 -a "$__ch" -le 144 ] 2>/dev/null; then
@@ -2075,11 +2076,11 @@ fluxion_get_target() {
   done
 
   local -r headerFields=$(
-    printf "$CRed[$CSYel ** $CClr$CRed]$CClr %2s %-${__essidMaxLen}s %4s %3s %3s %4s %-8s %-17s %-${__vendorMaxLen}s\n" \
-      "HS" "ESSID" "QLTY" "PWR" "STA" "CH" "SECURITY" "BSSID" "VENDOR"
+    printf "$CRed[$CSYel ** $CClr$CRed]$CClr %2s %-${__essidMaxLen}s %4s %3s %3s %4s %-8s %-17s %-${__vendorMaxLen}s %3s\n" \
+      "HS" "ESSID" "QLTY" "PWR" "STA" "CH" "SECURITY" "BSSID" "VENDOR" "IOT"
   )
 
-  local -r __dataFormat="$CRed[$CSYel%03d$CClr$CRed]%b  %2s %-${__essidMaxLen}.${__essidMaxLen}s %3s%% %3s %3d %4s %-8.8s %-17s %-${__vendorMaxLen}.${__vendorMaxLen}s\n"
+  local -r __dataFormat="$CRed[$CSYel%03d$CClr$CRed]%b  %2s %-${__essidMaxLen}.${__essidMaxLen}s %3s%% %3s %3d %4s %-8.8s %-17s %-${__vendorMaxLen}.${__vendorMaxLen}s %3d\n"
   FormatApplyAutosize="$__dataFormat"
 
   if [ "$FLUXIONAuto" ]; then
@@ -2115,7 +2116,8 @@ fluxion_get_target() {
       candidatesChannel[@] \
       candidatesSecurity[@] \
       candidatesMAC[@] \
-      candidatesVendor[@]
+      candidatesVendor[@] \
+      candidatesIoTCount[@]
 
     echo
 
